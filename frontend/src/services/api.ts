@@ -70,6 +70,13 @@ export const stockApi = {
     return response.data;
   },
 
+  getChartData: async (ticker: string, period: string = '6mo', interval: string = '1d') => {
+    const response = await api.get(`/chart/${ticker}`, {
+      params: { period, interval }
+    });
+    return response.data;
+  },
+
   // Portfolio
   portfolioRisk: async (tickers: string[], weights?: number[]) => {
     const response = await api.post('/portfolio/risk', { tickers, weights });

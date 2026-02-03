@@ -10,6 +10,7 @@ A sophisticated multi-agent system for comprehensive stock analysis using:
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict
+import pandas as pd
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -485,6 +486,80 @@ async def get_drawdown(ticker: str):
         raise
     except Exception as e:
         logger.error(f"Drawdown error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/chart/{ticker}", tags=["Utilities"])
+async def get_chart_data(ticker: str, period: str = "6mo", interval: str = "1d"):
+    """
+    Get OHLCV chart data for a stock
+    
+    Args:
+        ticker: Stock symbol (e.g., RELIANCE.NS)
+        period: Data period (1mo, 3mo, 6mo, 1y, 2y, 5y)
+        interval: Data interval (1d, 1wk, 1mo)
+    
+    Returns:
+        OHLCV data formatted for charting
+    """
+    import yfinance as yf
+    
+    try:
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period, interval=interval)
+        
+        if df.empty:
+            raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
+        
+        # Format data for lightweight-charts
+        candles = []
+        volumes = []
+        
+        for idx, row in df.iterrows():
+            timestamp = int(idx.timestamp())
+            candles.append({
+                "time": timestamp,
+                "open": round(row["Open"], 2),
+                "high": round(row["High"], 2),
+                "low": round(row["Low"], 2),
+                "close": round(row["Close"], 2)
+            })
+            volumes.append({
+                "time": timestamp,
+                "value": int(row["Volume"]),
+                "color": "rgba(38, 166, 154, 0.5)" if row["Close"] >= row["Open"] else "rgba(239, 83, 80, 0.5)"
+            })
+        
+        # Calculate moving averages
+        df["SMA20"] = df["Close"].rolling(window=20).mean()
+        df["SMA50"] = df["Close"].rolling(window=50).mean()
+        
+        sma20 = []
+        sma50 = []
+        
+        for idx, row in df.iterrows():
+            timestamp = int(idx.timestamp())
+            if not pd.isna(row["SMA20"]):
+                sma20.append({"time": timestamp, "value": round(row["SMA20"], 2)})
+            if not pd.isna(row["SMA50"]):
+                sma50.append({"time": timestamp, "value": round(row["SMA50"], 2)})
+        
+        return {
+            "success": True,
+            "ticker": ticker.upper(),
+            "candles": candles,
+            "volumes": volumes,
+            "sma20": sma20,
+            "sma50": sma50,
+            "period": period,
+            "interval": interval,
+            "data_points": len(candles)
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chart data error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

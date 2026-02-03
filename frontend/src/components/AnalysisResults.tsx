@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import type { AnalysisResponse } from '../types';
 import { MetricCard, MetricRow } from './MetricCard';
+import { StockChart } from './StockChart';
 
 interface AnalysisResultsProps {
   data: AnalysisResponse;
@@ -167,6 +168,9 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           />
         </div>
       </div>
+
+      {/* Stock Chart */}
+      <StockChart ticker={ticker} />
 
       {/* Recommendation Section */}
       <CollapsibleSection
