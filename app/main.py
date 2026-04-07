@@ -1,12 +1,3 @@
-"""
-Multi-Agent Stock Analysis System - FastAPI Backend
-
-A sophisticated multi-agent system for comprehensive stock analysis using:
-- LangChain & LangGraph for agent orchestration
-- Grok API for LLM capabilities
-- FastAPI for the REST API backend
-"""
-
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Dict
@@ -36,9 +27,10 @@ from app.agents.risk_agent import RiskAgent
 from app.agents.supervisor import run_analysis
 from app.agents.screener_agent import ScreenerAgent, INDIAN_STOCK_UNIVERSE
 from app.agents.signals_agent import SignalsAgent
+from app.agents.base import normalize_ticker, _model_name_suggests_groq
 from app.data.provider import get_data_provider, DataProvider
+from app.json_util import to_json_safe
 
-# Configure logging
 logging.basicConfig(
     level=getattr(logging, settings.log_level),
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -48,56 +40,34 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Application lifespan handler"""
-    # Startup
     logger.info("🚀 Starting Multi-Agent Stock Analysis System...")
     logger.info(f"📊 Version: {__version__}")
-    logger.info(f"🤖 Using Grok model: {settings.grok_model}")
-    
-    # Validate API key
-    if not settings.grok_api_key:
-        logger.warning("⚠️ GROK_API_KEY not set - LLM features will not work")
-    
+    gq = (settings.groq_api_key or "").strip()
+    gx = (settings.grok_api_key or "").strip()
+    if gq:
+        logger.info(f"🤖 LLM: Groq — model {settings.groq_model} @ {settings.groq_api_base}")
+    elif gx and _model_name_suggests_groq(settings.grok_model):
+        logger.info(
+            f"🤖 LLM: Groq (GROK_* + Llama-style model) — {settings.grok_model} @ {settings.groq_api_base}"
+        )
+    else:
+        logger.info(f"🤖 LLM: xAI Grok — model {settings.grok_model} @ {settings.grok_api_base}")
+
+    if not gq and not gx:
+        logger.warning("⚠️ Set GROQ_API_KEY (Groq) or GROK_API_KEY (xAI) — LLM features will not work")
+
     yield
-    
-    # Shutdown
+
     logger.info("👋 Shutting down Multi-Agent Stock Analysis System...")
 
 
-# Create FastAPI application
 app = FastAPI(
     title="Multi-Agent Stock Analysis System",
-    description="""
-A sophisticated multi-agent system for comprehensive stock analysis.
-
-## Agents
-
-- **Market Data Agent**: Fetches market data, computes technical indicators, feature engineering
-- **Technical Agent**: Chart patterns, market structure, regime detection, support/resistance
-- **Risk Agent**: Position sizing, VaR calculation, drawdown analysis, portfolio guardrails
-- **Supervisor Agent**: Orchestrates all agents and synthesizes recommendations
-
-## Features
-
-- Real-time market data from Yahoo Finance
-- Comprehensive technical indicator calculation
-- Multiple risk metrics (VaR, Sharpe, Sortino, Calmar)
-- Chart pattern recognition
-- Market regime classification
-- Position sizing recommendations
-- Portfolio-level analysis
-
-## Usage
-
-1. Use `/analyze` for full multi-agent analysis
-2. Use `/quick/*` endpoints for single-agent analysis
-3. Use `/portfolio/*` endpoints for portfolio-level analysis
-    """,
+    description="Multi-agent stock analysis API.",
     version=__version__,
     lifespan=lifespan
 )
 
-# Configure CORS
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -107,11 +77,8 @@ app.add_middleware(
 )
 
 
-# ============== Health & Info Endpoints ==============
-
 @app.get("/", tags=["Info"])
 async def root():
-    """Root endpoint with API information"""
     return {
         "name": "Multi-Agent Stock Analysis System",
         "version": __version__,
@@ -119,7 +86,7 @@ async def root():
         "docs": "/docs",
         "agents": [
             "MarketDataAgent",
-            "TechnicalAgent", 
+            "TechnicalAgent",
             "RiskAgent",
             "SupervisorAgent"
         ]
@@ -128,7 +95,6 @@ async def root():
 
 @app.get("/health", response_model=HealthResponse, tags=["Info"])
 async def health_check():
-    """Health check endpoint"""
     return HealthResponse(
         status="healthy",
         version=__version__,
@@ -141,61 +107,48 @@ async def health_check():
     )
 
 
-# ============== Full Analysis Endpoint ==============
-
 @app.post("/analyze", response_model=AnalysisResponse, tags=["Analysis"])
 async def analyze_stock(request: AnalysisRequest):
-    """
-    Run comprehensive multi-agent stock analysis with REAL-TIME data
-    
-    This endpoint orchestrates all agents in sequence:
-    1. Market Data Agent - fetches and processes data
-    2. Technical Agent - analyzes charts and patterns
-    3. Risk Agent - calculates risk metrics
-    4. Supervisor Agent - synthesizes final recommendation
-    
-    Data Sources:
-    - Real-time quote: NSE India / Yahoo Finance
-    - Historical data: Yahoo Finance
-    - Fundamentals: Yahoo Finance
-    
-    Returns a comprehensive analysis with actionable recommendations.
-    """
     try:
-        logger.info(f"Starting analysis for {request.ticker}")
-        
-        # Get real-time quote first
+        ticker = normalize_ticker(request.ticker)
+        logger.info(f"Starting analysis for {ticker}")
+
         data_provider = get_data_provider(prefer_realtime=True)
-        realtime_quote = data_provider.get_quote(request.ticker, force_realtime=True)
-        logger.info(f"Real-time quote for {request.ticker}: ₹{realtime_quote.get('last_price')} [{realtime_quote.get('source')}]")
-        
+        realtime_quote = data_provider.get_quote(ticker, force_realtime=True)
+        logger.info(f"Real-time quote for {ticker}: ₹{realtime_quote.get('last_price')} [{realtime_quote.get('source')}]")
+
         result = await run_analysis(
-            ticker=request.ticker,
+            ticker=ticker,
             task=request.task,
             account_size=request.account_size,
             risk_tolerance=request.risk_tolerance.value
         )
-        
+
         if not result.get("success", False):
             raise HTTPException(
                 status_code=500,
                 detail=f"Analysis failed: {result.get('error', 'Unknown error')}"
             )
-        
-        # Determine data source description
+
         data_source = f"{realtime_quote.get('source', 'Yahoo Finance')} (Current Price) + Yahoo Finance (Historical & Fundamentals)"
-        
+
+        safe_quote = (
+            to_json_safe(realtime_quote)
+            if realtime_quote and not realtime_quote.get("error")
+            else None
+        )
+
         return AnalysisResponse(
             success=True,
-            ticker=request.ticker.upper(),
-            final_recommendation=result.get("final_recommendation", ""),
-            analysis_results=result.get("analysis_results", {}),
-            realtime_quote=realtime_quote if not realtime_quote.get('error') else None,
+            ticker=ticker,
+            final_recommendation=str(result.get("final_recommendation") or ""),
+            analysis_results=to_json_safe(result.get("analysis_results", {})),
+            realtime_quote=safe_quote,
             data_source=data_source,
-            messages=result.get("messages", []),
-            errors=result.get("errors", [])
+            messages=to_json_safe(result.get("messages", [])),
+            errors=[str(e) for e in (result.get("errors") or [])],
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -203,38 +156,27 @@ async def analyze_stock(request: AnalysisRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============== Quick Analysis Endpoints (Single Agent) ==============
-
 @app.post("/quick/market-data", response_model=MarketDataResponse, tags=["Quick Analysis"])
 async def quick_market_data(request: QuickAnalysisRequest):
-    """
-    Quick market data analysis (Market Data Agent only)
-    
-    Returns:
-    - Stock price data
-    - Technical indicators
-    - Fundamental data
-    - Return metrics
-    """
     try:
-        # Use static methods directly (no LLM required)
-        stock_data = MarketDataAgent.fetch_stock_data(request.ticker)
+        ticker = normalize_ticker(request.ticker)
+        stock_data = MarketDataAgent.fetch_stock_data(ticker)
         if not stock_data.get("success"):
-            raise HTTPException(status_code=404, detail=f"No data found for {request.ticker}")
-        
-        technical_indicators = MarketDataAgent.compute_technical_indicators(request.ticker)
-        fundamental_data = MarketDataAgent.get_fundamental_data(request.ticker)
-        returns_data = MarketDataAgent.calculate_returns(request.ticker)
-        
+            raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
+
+        technical_indicators = MarketDataAgent.compute_technical_indicators(ticker)
+        fundamental_data = MarketDataAgent.get_fundamental_data(ticker)
+        returns_data = MarketDataAgent.calculate_returns(ticker)
+
         return MarketDataResponse(
             success=True,
-            ticker=request.ticker.upper(),
-            stock_data=stock_data,
-            technical_indicators=technical_indicators,
-            fundamental_data=fundamental_data,
-            returns_data=returns_data
+            ticker=ticker,
+            stock_data=to_json_safe(stock_data),
+            technical_indicators=to_json_safe(technical_indicators),
+            fundamental_data=to_json_safe(fundamental_data),
+            returns_data=to_json_safe(returns_data),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -244,34 +186,25 @@ async def quick_market_data(request: QuickAnalysisRequest):
 
 @app.post("/quick/technical", response_model=TechnicalResponse, tags=["Quick Analysis"])
 async def quick_technical(request: QuickAnalysisRequest):
-    """
-    Quick technical analysis (Technical Agent only)
-    
-    Returns:
-    - Market regime classification
-    - Support/Resistance levels
-    - Chart patterns
-    - Trend structure analysis
-    """
     try:
-        # Use static methods directly (no LLM required)
-        regime_analysis = TechnicalAgent.identify_market_regime(request.ticker)
-        support_resistance = TechnicalAgent.find_support_resistance(request.ticker)
-        chart_patterns = TechnicalAgent.detect_chart_patterns(request.ticker)
-        trend_structure = TechnicalAgent.analyze_trend_structure(request.ticker)
-        
+        ticker = normalize_ticker(request.ticker)
+        regime_analysis = TechnicalAgent.identify_market_regime(ticker)
+        support_resistance = TechnicalAgent.find_support_resistance(ticker)
+        chart_patterns = TechnicalAgent.detect_chart_patterns(ticker)
+        trend_structure = TechnicalAgent.analyze_trend_structure(ticker)
+
         if not regime_analysis.get("success"):
-            raise HTTPException(status_code=404, detail=f"Insufficient data for {request.ticker}")
-        
+            raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
+
         return TechnicalResponse(
             success=True,
-            ticker=request.ticker.upper(),
-            regime_analysis=regime_analysis,
-            support_resistance=support_resistance,
-            chart_patterns=chart_patterns,
-            trend_structure=trend_structure
+            ticker=ticker,
+            regime_analysis=to_json_safe(regime_analysis),
+            support_resistance=to_json_safe(support_resistance),
+            chart_patterns=to_json_safe(chart_patterns),
+            trend_structure=to_json_safe(trend_structure),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -281,40 +214,31 @@ async def quick_technical(request: QuickAnalysisRequest):
 
 @app.post("/quick/risk", response_model=RiskResponse, tags=["Quick Analysis"])
 async def quick_risk(request: PositionSizeRequest):
-    """
-    Quick risk analysis (Risk Agent only)
-    
-    Returns:
-    - Position sizing recommendations
-    - Value at Risk (VaR)
-    - Drawdown analysis
-    - Risk limits and guardrails
-    """
     try:
-        # Use static methods directly (no LLM required)
+        ticker = normalize_ticker(request.ticker)
         position_sizing = RiskAgent.calculate_position_size(
-            request.ticker,
+            ticker,
             request.account_size,
             request.risk_per_trade_pct,
             request.stop_loss_pct
         )
-        
+
         if not position_sizing.get("success"):
-            raise HTTPException(status_code=404, detail=f"Insufficient data for {request.ticker}")
-        
-        var_analysis = RiskAgent.compute_var(request.ticker)
-        drawdown_analysis = RiskAgent.analyze_drawdown(request.ticker)
-        risk_limits = RiskAgent.generate_risk_limits(request.ticker, request.account_size)
-        
+            raise HTTPException(status_code=404, detail=f"Insufficient data for {ticker}")
+
+        var_analysis = RiskAgent.compute_var(ticker)
+        drawdown_analysis = RiskAgent.analyze_drawdown(ticker)
+        risk_limits = RiskAgent.generate_risk_limits(ticker, request.account_size)
+
         return RiskResponse(
             success=True,
-            ticker=request.ticker.upper(),
-            position_sizing=position_sizing,
-            var_analysis=var_analysis,
-            drawdown_analysis=drawdown_analysis,
-            risk_limits=risk_limits
+            ticker=ticker,
+            position_sizing=to_json_safe(position_sizing),
+            var_analysis=to_json_safe(var_analysis),
+            drawdown_analysis=to_json_safe(drawdown_analysis),
+            risk_limits=to_json_safe(risk_limits),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -322,21 +246,9 @@ async def quick_risk(request: PositionSizeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============== Portfolio Analysis Endpoints ==============
-
 @app.post("/portfolio/risk", response_model=PortfolioRiskResponse, tags=["Portfolio"])
 async def portfolio_risk(request: PortfolioAnalysisRequest):
-    """
-    Portfolio-level risk analysis
-    
-    Returns:
-    - Portfolio metrics (return, volatility, Sharpe)
-    - Correlation matrix
-    - Risk contribution by asset
-    - Diversification ratio
-    """
     try:
-        # Validate weights if provided
         if request.weights:
             if len(request.weights) != len(request.tickers):
                 raise HTTPException(
@@ -348,24 +260,23 @@ async def portfolio_risk(request: PortfolioAnalysisRequest):
                     status_code=400,
                     detail="Weights must sum to 1.0"
                 )
-        
-        # Use static method directly (no LLM required)
+
         result = RiskAgent.portfolio_risk_metrics(
             request.tickers,
             request.weights
         )
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "Analysis failed"))
-        
+
         return PortfolioRiskResponse(
             success=True,
             tickers=request.tickers,
-            portfolio_metrics=result.get("portfolio_metrics"),
-            correlation_matrix=result.get("correlation_matrix"),
-            risk_contribution=result.get("risk_contribution")
+            portfolio_metrics=to_json_safe(result.get("portfolio_metrics")),
+            correlation_matrix=to_json_safe(result.get("correlation_matrix")),
+            risk_contribution=to_json_safe(result.get("risk_contribution")),
         )
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -373,20 +284,17 @@ async def portfolio_risk(request: PortfolioAnalysisRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ============== Utility Endpoints ==============
-
 @app.get("/indicators/{ticker}", tags=["Utilities"])
 async def get_indicators(ticker: str):
-    """Get technical indicators for a stock"""
     try:
-        # Use static method directly without instantiating agent
+        ticker = normalize_ticker(ticker)
         result = MarketDataAgent.compute_technical_indicators(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -396,16 +304,15 @@ async def get_indicators(ticker: str):
 
 @app.get("/regime/{ticker}", tags=["Utilities"])
 async def get_regime(ticker: str):
-    """Get market regime classification for a stock"""
     try:
-        # Use static method directly
+        ticker = normalize_ticker(ticker)
         result = TechnicalAgent.identify_market_regime(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -415,16 +322,15 @@ async def get_regime(ticker: str):
 
 @app.get("/support-resistance/{ticker}", tags=["Utilities"])
 async def get_support_resistance(ticker: str):
-    """Get support and resistance levels for a stock"""
     try:
-        # Use static method directly
+        ticker = normalize_ticker(ticker)
         result = TechnicalAgent.find_support_resistance(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -434,16 +340,15 @@ async def get_support_resistance(ticker: str):
 
 @app.get("/patterns/{ticker}", tags=["Utilities"])
 async def get_patterns(ticker: str):
-    """Get chart patterns for a stock"""
     try:
-        # Use static method directly
+        ticker = normalize_ticker(ticker)
         result = TechnicalAgent.detect_chart_patterns(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -453,16 +358,15 @@ async def get_patterns(ticker: str):
 
 @app.get("/var/{ticker}", tags=["Utilities"])
 async def get_var(ticker: str, position_value: float = 10000.0):
-    """Get Value at Risk analysis for a stock"""
     try:
-        # Use static method directly
+        ticker = normalize_ticker(ticker)
         result = RiskAgent.compute_var(ticker, position_value)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -472,16 +376,15 @@ async def get_var(ticker: str, position_value: float = 10000.0):
 
 @app.get("/drawdown/{ticker}", tags=["Utilities"])
 async def get_drawdown(ticker: str):
-    """Get drawdown analysis for a stock"""
     try:
-        # Use static method directly
+        ticker = normalize_ticker(ticker)
         result = RiskAgent.analyze_drawdown(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -491,30 +394,19 @@ async def get_drawdown(ticker: str):
 
 @app.get("/chart/{ticker}", tags=["Utilities"])
 async def get_chart_data(ticker: str, period: str = "6mo", interval: str = "1d"):
-    """
-    Get OHLCV chart data for a stock
-    
-    Args:
-        ticker: Stock symbol (e.g., RELIANCE.NS)
-        period: Data period (1mo, 3mo, 6mo, 1y, 2y, 5y)
-        interval: Data interval (1d, 1wk, 1mo)
-    
-    Returns:
-        OHLCV data formatted for charting
-    """
     import yfinance as yf
-    
+
     try:
+        ticker = normalize_ticker(ticker)
         stock = yf.Ticker(ticker)
         df = stock.history(period=period, interval=interval)
-        
+
         if df.empty:
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
-        # Format data for lightweight-charts
+
         candles = []
         volumes = []
-        
+
         for idx, row in df.iterrows():
             timestamp = int(idx.timestamp())
             candles.append({
@@ -529,21 +421,20 @@ async def get_chart_data(ticker: str, period: str = "6mo", interval: str = "1d")
                 "value": int(row["Volume"]),
                 "color": "rgba(38, 166, 154, 0.5)" if row["Close"] >= row["Open"] else "rgba(239, 83, 80, 0.5)"
             })
-        
-        # Calculate moving averages
+
         df["SMA20"] = df["Close"].rolling(window=20).mean()
         df["SMA50"] = df["Close"].rolling(window=50).mean()
-        
+
         sma20 = []
         sma50 = []
-        
+
         for idx, row in df.iterrows():
             timestamp = int(idx.timestamp())
             if not pd.isna(row["SMA20"]):
                 sma20.append({"time": timestamp, "value": round(row["SMA20"], 2)})
             if not pd.isna(row["SMA50"]):
                 sma50.append({"time": timestamp, "value": round(row["SMA50"], 2)})
-        
+
         return {
             "success": True,
             "ticker": ticker.upper(),
@@ -555,7 +446,7 @@ async def get_chart_data(ticker: str, period: str = "6mo", interval: str = "1d")
             "interval": interval,
             "data_points": len(candles)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -563,11 +454,8 @@ async def get_chart_data(ticker: str, period: str = "6mo", interval: str = "1d")
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== SCREENER ENDPOINTS ====================
-
 @app.get("/screener/presets", tags=["Screener"])
 async def get_screener_presets():
-    """Get all available preset screening strategies"""
     return {
         "presets": ScreenerAgent.get_preset_screens(),
         "sectors": list(INDIAN_STOCK_UNIVERSE.keys()),
@@ -577,12 +465,6 @@ async def get_screener_presets():
 
 @app.get("/screener/universe", tags=["Screener"])
 async def get_stock_universe(sectors: str = None):
-    """
-    Get the stock universe for screening
-    
-    Args:
-        sectors: Comma-separated list of sectors (e.g., "banking,it,pharma")
-    """
     sector_list = sectors.split(",") if sectors else None
     stocks = ScreenerAgent.get_stock_universe(sector_list)
     return {
@@ -598,29 +480,21 @@ async def run_screener(
     sectors: str = None,
     top_n: int = 15
 ):
-    """
-    Run a stock screener with preset or custom filters
-    
-    Args:
-        screen_type: Preset screen type (value_picks, growth_stars, momentum_leaders, etc.)
-        sectors: Comma-separated list of sectors
-        top_n: Number of top results to return
-    """
     try:
         screener = ScreenerAgent()
         sector_list = sectors.split(",") if sectors else None
-        
+
         result = await screener.run_screen_with_ai(
             screen_type=screen_type,
             sectors=sector_list,
             top_n=top_n
         )
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "Screening failed"))
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -634,51 +508,22 @@ async def run_custom_screener(
     sectors: str = None,
     top_n: int = 15
 ):
-    """
-    Run a custom stock screener with user-defined filters
-    
-    Available filters:
-    - pe_max, pe_min: P/E ratio bounds
-    - pb_max: Price to Book maximum
-    - peg_max: PEG ratio maximum
-    - roe_min: Return on Equity minimum (%)
-    - profit_margin_min: Profit margin minimum (%)
-    - revenue_growth_min: Revenue growth minimum (%)
-    - earnings_growth_min: Earnings growth minimum (%)
-    - rsi_max, rsi_min: RSI bounds
-    - above_sma_50: Must be above 50-day SMA (boolean)
-    - above_sma_200: Must be above 200-day SMA (boolean)
-    - returns_1m_min, returns_3m_min: Minimum returns (%)
-    - pct_from_high_max: Maximum % from 52-week high
-    - volume_ratio_min: Minimum volume ratio vs average
-    - debt_to_equity_max: Maximum debt to equity ratio
-    - dividend_yield_min: Minimum dividend yield (%)
-    - market_cap_min, market_cap_max: Market cap bounds (in Cr)
-    
-    Example:
-    {
-        "pe_max": 20,
-        "roe_min": 15,
-        "above_sma_50": true,
-        "debt_to_equity_max": 100
-    }
-    """
     try:
         screener = ScreenerAgent()
         sector_list = sectors.split(",") if sectors else None
-        
+
         result = await screener.run_screen_with_ai(
             screen_type="custom",
             sectors=sector_list,
             custom_filters=filters,
             top_n=top_n
         )
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=400, detail=result.get("error", "Screening failed"))
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -688,15 +533,15 @@ async def run_custom_screener(
 
 @app.get("/screener/stock/{ticker}", tags=["Screener"])
 async def get_stock_metrics(ticker: str):
-    """Get all screening metrics for a single stock"""
     try:
+        ticker = normalize_ticker(ticker)
         result = ScreenerAgent.fetch_stock_metrics(ticker)
-        
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=f"No data found for {ticker}")
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -706,35 +551,29 @@ async def get_stock_metrics(ticker: str):
 
 @app.get("/screener/compare", tags=["Screener"])
 async def compare_stocks(tickers: str):
-    """
-    Compare multiple stocks side by side
-    
-    Args:
-        tickers: Comma-separated list of tickers (e.g., "RELIANCE.NS,TCS.NS,INFY.NS")
-    """
     try:
-        ticker_list = [t.strip().upper() for t in tickers.split(",")]
-        
+        ticker_list = [normalize_ticker(t.strip()) for t in tickers.split(",")]
+
         if len(ticker_list) < 2:
             raise HTTPException(status_code=400, detail="Please provide at least 2 tickers to compare")
-        
+
         if len(ticker_list) > 5:
             raise HTTPException(status_code=400, detail="Maximum 5 tickers allowed for comparison")
-        
+
         results = []
         for ticker in ticker_list:
             data = ScreenerAgent.fetch_stock_metrics(ticker)
             if data.get("success"):
                 results.append(data)
-        
+
         if not results:
             raise HTTPException(status_code=404, detail="No valid data found for provided tickers")
-        
+
         return {
             "comparison": results,
             "count": len(results)
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -742,31 +581,17 @@ async def compare_stocks(tickers: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== TRADING SIGNALS ENDPOINTS ====================
-
 @app.get("/signals/{ticker}", tags=["Signals"])
 async def get_trading_signal(ticker: str):
-    """
-    Get trading signal for a stock with entry/exit levels
-    
-    Returns:
-    - Signal type (STRONG_BUY, BUY, HOLD, SELL, STRONG_SELL)
-    - Signal strength (1-5 stars)
-    - Entry zone (price range to buy)
-    - Stop loss level with risk %
-    - Target prices (T1, T2, T3)
-    - Risk/Reward ratio
-    - Bullish and bearish reasons
-    - All technical indicators used
-    """
     try:
-        result = SignalsAgent.generate_signal(ticker.upper())
-        
+        ticker = normalize_ticker(ticker)
+        result = SignalsAgent.generate_signal(ticker)
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=result.get("error", f"No data found for {ticker}"))
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -776,28 +601,19 @@ async def get_trading_signal(ticker: str):
 
 @app.post("/signals/{ticker}/analyze", tags=["Signals"])
 async def get_signal_with_ai_analysis(ticker: str):
-    """
-    Get trading signal with AI-powered analysis and recommendations
-    
-    Returns everything from /signals/{ticker} plus:
-    - AI analysis with action plan
-    - Risk warnings
-    - Timing recommendations
-    - Position sizing suggestions
-    """
     try:
+        ticker = normalize_ticker(ticker)
         signals_agent = SignalsAgent()
-        signal_data = SignalsAgent.generate_signal(ticker.upper())
-        
+        signal_data = SignalsAgent.generate_signal(ticker)
+
         if not signal_data.get("success"):
             raise HTTPException(status_code=404, detail=signal_data.get("error", f"No data found for {ticker}"))
-        
-        # Generate AI analysis
+
         ai_analysis = await signals_agent.generate_ai_analysis(signal_data)
         signal_data["ai_analysis"] = ai_analysis
-        
+
         return signal_data
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -811,28 +627,17 @@ async def scan_stocks_for_signals(
     sectors: str = None,
     limit: int = 20
 ):
-    """
-    Scan multiple stocks for trading signals
-    
-    Args:
-        signal_filter: Filter by signal type ("BUY" or "SELL")
-        sectors: Comma-separated sectors to scan (e.g., "banking,it")
-        limit: Maximum number of results
-    
-    Returns list of stocks with their signals, sorted by signal strength
-    """
     try:
-        # Get stock universe
         sector_list = sectors.split(",") if sectors else None
-        tickers = ScreenerAgent.get_stock_universe(sector_list)[:50]  # Limit to 50 for performance
-        
+        tickers = ScreenerAgent.get_stock_universe(sector_list)[:50]
+
         result = SignalsAgent.scan_for_signals(tickers, signal_filter)
-        
+
         if result.get("results"):
             result["results"] = result["results"][:limit]
-        
+
         return result
-        
+
     except Exception as e:
         logger.error(f"Signal scan error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -840,27 +645,15 @@ async def scan_stocks_for_signals(
 
 @app.get("/signals/indicators/{ticker}", tags=["Signals"])
 async def get_signal_indicators(ticker: str):
-    """
-    Get all technical indicators used for signal generation
-    
-    Returns detailed indicator values:
-    - RSI with signal
-    - MACD line, signal, histogram
-    - Moving averages (20, 50, 200)
-    - Bollinger Bands
-    - ATR
-    - Volume analysis
-    - Support/Resistance levels
-    - Trend analysis
-    """
     try:
-        result = SignalsAgent.calculate_indicators(ticker.upper())
-        
+        ticker = normalize_ticker(ticker)
+        result = SignalsAgent.calculate_indicators(ticker)
+
         if not result.get("success"):
             raise HTTPException(status_code=404, detail=result.get("error", f"No data found for {ticker}"))
-        
+
         return result
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -868,32 +661,18 @@ async def get_signal_indicators(ticker: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ==================== REAL-TIME DATA ENDPOINTS ====================
-
 @app.get("/realtime/quote/{symbol}", tags=["Real-Time Data"])
 async def get_realtime_quote(symbol: str, force_realtime: bool = True):
-    """
-    Get real-time stock quote from NSE India
-    
-    This endpoint provides LIVE market data during trading hours (9:15 AM - 3:30 PM IST).
-    Outside market hours, it falls back to Yahoo Finance.
-    
-    Args:
-        symbol: Stock symbol (e.g., "RELIANCE", "TCS", or "RELIANCE.NS")
-        force_realtime: Force NSE real-time data even outside market hours
-    
-    Returns:
-        Real-time quote with last price, change, OHLC, volume
-    """
     try:
+        symbol = normalize_ticker(symbol)
         provider = get_data_provider(prefer_realtime=True)
         quote = provider.get_quote(symbol, force_realtime=force_realtime)
-        
+
         if quote.get('error'):
             raise HTTPException(status_code=404, detail=f"No data found for {symbol}")
-        
+
         return quote
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -903,11 +682,6 @@ async def get_realtime_quote(symbol: str, force_realtime: bool = True):
 
 @app.get("/realtime/market-status", tags=["Real-Time Data"])
 async def get_market_status():
-    """
-    Get current Indian market status
-    
-    Returns whether the market is open/closed and timestamp
-    """
     try:
         provider = get_data_provider()
         return provider.get_market_status()
@@ -918,24 +692,15 @@ async def get_market_status():
 
 @app.get("/realtime/index/{index_name}", tags=["Real-Time Data"])
 async def get_index_quote(index_name: str = "NIFTY 50"):
-    """
-    Get real-time index quote
-    
-    Args:
-        index_name: Index name (e.g., "NIFTY 50", "NIFTY BANK", "NIFTY IT")
-    
-    Returns:
-        Index value, change, advances/declines
-    """
     try:
         provider = get_data_provider()
         quote = provider.get_index(index_name.upper())
-        
+
         if not quote:
             raise HTTPException(status_code=404, detail=f"Index {index_name} not found")
-        
+
         return quote
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -945,15 +710,6 @@ async def get_index_quote(index_name: str = "NIFTY 50"):
 
 @app.get("/realtime/gainers", tags=["Real-Time Data"])
 async def get_top_gainers(index: str = "NIFTY 50"):
-    """
-    Get top 10 gaining stocks in an index
-    
-    Args:
-        index: Index name (default: "NIFTY 50")
-    
-    Returns:
-        List of top gainers with symbol, price, change %
-    """
     try:
         provider = get_data_provider()
         gainers = provider.get_top_gainers(index.upper())
@@ -965,15 +721,6 @@ async def get_top_gainers(index: str = "NIFTY 50"):
 
 @app.get("/realtime/losers", tags=["Real-Time Data"])
 async def get_top_losers(index: str = "NIFTY 50"):
-    """
-    Get top 10 losing stocks in an index
-    
-    Args:
-        index: Index name (default: "NIFTY 50")
-    
-    Returns:
-        List of top losers with symbol, price, change %
-    """
     try:
         provider = get_data_provider()
         losers = provider.get_top_losers(index.upper())
@@ -985,35 +732,26 @@ async def get_top_losers(index: str = "NIFTY 50"):
 
 @app.get("/realtime/bulk-quotes", tags=["Real-Time Data"])
 async def get_bulk_quotes(symbols: str):
-    """
-    Get real-time quotes for multiple stocks
-    
-    Args:
-        symbols: Comma-separated list of symbols (e.g., "RELIANCE,TCS,INFY")
-    
-    Returns:
-        List of quotes for all requested symbols
-    """
     try:
-        symbol_list = [s.strip().upper() for s in symbols.split(",")]
-        
+        symbol_list = [normalize_ticker(s.strip()) for s in symbols.split(",")]
+
         if len(symbol_list) > 20:
             raise HTTPException(status_code=400, detail="Maximum 20 symbols allowed")
-        
+
         provider = get_data_provider()
         quotes = []
-        
+
         for symbol in symbol_list:
             quote = provider.get_quote(symbol, force_realtime=True)
             if not quote.get('error'):
                 quotes.append(quote)
-        
+
         return {
             "requested": len(symbol_list),
             "found": len(quotes),
             "quotes": quotes
         }
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -1021,10 +759,8 @@ async def get_bulk_quotes(symbols: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Error handlers
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler"""
     logger.error(f"Unhandled exception: {exc}")
     return JSONResponse(
         status_code=500,
@@ -1037,7 +773,6 @@ if __name__ == "__main__":
     uvicorn.run(
         "app.main:app",
         host="0.0.0.0",
-        port=8000,
+        port=8001,
         reload=settings.debug
     )
-

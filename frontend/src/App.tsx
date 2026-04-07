@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { Header } from './components/Header';
 import { SearchInput } from './components/SearchInput';
 import { AnalysisResults } from './components/AnalysisResults';
@@ -6,7 +7,7 @@ import { LoadingState } from './components/LoadingState';
 import { Screener } from './components/Screener';
 import { Signals } from './components/Signals';
 import { AlertCircle, Sparkles, BarChart3, Filter, Zap } from 'lucide-react';
-import stockApi from './services/api';
+import stockApi, { verifyStockAnalyzerBackend } from './services/api';
 import type { AnalysisResponse } from './types';
 
 type TabType = 'analyzer' | 'screener' | 'signals';
@@ -18,7 +19,6 @@ function App() {
   const [result, setResult] = useState<AnalysisResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Simulate agent progress during loading
   useEffect(() => {
     if (isLoading) {
       const interval = setInterval(() => {
@@ -42,6 +42,7 @@ function App() {
     setLoadingAgent(0);
 
     try {
+      await verifyStockAnalyzerBackend();
       const data = await stockApi.analyze({
         ticker,
         task,
@@ -52,7 +53,18 @@ function App() {
       setResult(data);
     } catch (err: unknown) {
       console.error('Analysis error:', err);
-      const errorMessage = err instanceof Error ? err.message : 'Failed to analyze stock. Please try again.';
+      let errorMessage = 'Failed to analyze stock. Please try again.';
+      if (axios.isAxiosError(err)) {
+        const d = err.response?.data;
+        if (d && typeof d === 'object' && 'detail' in d) {
+          const detail = (d as { detail: unknown }).detail;
+          errorMessage = typeof detail === 'string' ? detail : JSON.stringify(detail);
+        } else {
+          errorMessage = err.message;
+        }
+      } else if (err instanceof Error) {
+        errorMessage = err.message;
+      }
       setError(errorMessage);
     } finally {
       setIsLoading(false);
@@ -61,7 +73,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-950">
-      {/* Background effects */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-0 left-1/4 w-96 h-96 bg-sky-500/10 rounded-full blur-3xl"></div>
         <div className="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
@@ -71,7 +82,6 @@ function App() {
       <div className="relative">
         <Header />
         
-        {/* Navigation Tabs */}
         <div className="max-w-7xl mx-auto px-6 pt-6">
           <div className="flex gap-2 p-1 bg-slate-900/50 rounded-xl w-fit border border-slate-800/50">
             <button
@@ -111,10 +121,8 @@ function App() {
         </div>
         
         <main className="max-w-7xl mx-auto px-6 py-8 space-y-8">
-          {/* Analyzer Tab */}
           {activeTab === 'analyzer' && (
             <>
-              {/* Hero Section */}
               {!result && !isLoading && (
                 <div className="text-center py-12">
                   <div className="inline-flex items-center gap-2 px-4 py-2 bg-sky-500/10 border border-sky-500/20 rounded-full mb-6">
@@ -131,10 +139,8 @@ function App() {
                 </div>
               )}
 
-              {/* Search Input */}
               <SearchInput onAnalyze={handleAnalyze} isLoading={isLoading} />
 
-              {/* Error State */}
               {error && (
                 <div className="glass-card border-rose-500/30 p-6">
                   <div className="flex items-start gap-4">
@@ -155,13 +161,10 @@ function App() {
                 </div>
               )}
 
-              {/* Loading State */}
               {isLoading && <LoadingState currentAgent={loadingAgent} />}
 
-              {/* Results */}
               {result && !isLoading && <AnalysisResults data={result} />}
 
-              {/* Features Section - shown when no results */}
               {!result && !isLoading && (
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 pt-8">
                   {[
@@ -193,24 +196,12 @@ function App() {
             </>
           )}
 
-          {/* Screener Tab */}
           {activeTab === 'screener' && <Screener />}
 
-          {/* Signals Tab */}
           {activeTab === 'signals' && <Signals />}
         </main>
 
-        {/* Footer */}
-        <footer className="border-t border-slate-800/50 mt-12">
-          <div className="max-w-7xl mx-auto px-6 py-6 flex flex-col sm:flex-row justify-between items-center gap-4">
-            <p className="text-sm text-slate-500">
-              Indian Stock Market Analysis System (NSE/BSE) • For educational purposes only
-            </p>
-            <p className="text-sm text-slate-500">
-              Powered by LangGraph + Groq
-            </p>
-          </div>
-        </footer>
+        
       </div>
     </div>
   );

@@ -13,11 +13,29 @@ export function SearchInput({ onAnalyze, isLoading }: SearchInputProps) {
   const [riskTolerance, setRiskTolerance] = useState<'conservative' | 'moderate' | 'aggressive'>('moderate');
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  const normalizeTicker = (t: string): string => {
+    const upper = t.trim().toUpperCase();
+    if (!upper) return upper;
+    if (!upper.endsWith('.NS') && !upper.endsWith('.BO')) {
+      return `${upper}.NS`;
+    }
+    return upper;
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (ticker.trim()) {
-      onAnalyze(ticker.toUpperCase(), task, accountSize, riskTolerance);
+      const normalized = normalizeTicker(ticker);
+      setTicker(normalized);
+      onAnalyze(normalized, task, accountSize, riskTolerance);
     }
+  };
+
+  const runQuickAnalyze = (symbol: string) => {
+    if (isLoading) return;
+    const normalized = normalizeTicker(symbol);
+    setTicker(normalized);
+    onAnalyze(normalized, task, accountSize, riskTolerance);
   };
 
   const popularTickers = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'HDFCBANK.NS', 'ICICIBANK.NS', 'SBIN.NS'];
@@ -57,23 +75,23 @@ export function SearchInput({ onAnalyze, isLoading }: SearchInputProps) {
           </button>
         </div>
 
-        {/* Quick ticker buttons */}
         <div className="flex flex-wrap gap-2">
           <span className="text-sm text-slate-400">Popular:</span>
-          {popularTickers.map((t) => (
+          {popularTickers.map((sym) => (
             <button
-              key={t}
+              key={sym}
               type="button"
-              onClick={() => setTicker(t)}
+              disabled={isLoading}
+              onClick={() => runQuickAnalyze(sym)}
               className="px-3 py-1 text-sm font-mono bg-slate-800/50 hover:bg-slate-700/50 
-                         border border-slate-600/50 rounded-lg transition-colors text-slate-300"
+                         border border-slate-600/50 rounded-lg transition-colors text-slate-300
+                         disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {t}
+              {sym}
             </button>
           ))}
         </div>
 
-        {/* Advanced options toggle */}
         <button
           type="button"
           onClick={() => setShowAdvanced(!showAdvanced)}
@@ -82,7 +100,6 @@ export function SearchInput({ onAnalyze, isLoading }: SearchInputProps) {
           {showAdvanced ? '− Hide' : '+ Show'} Advanced Options
         </button>
 
-        {/* Advanced options */}
         {showAdvanced && (
           <div className="grid sm:grid-cols-3 gap-4 pt-2">
             <div>

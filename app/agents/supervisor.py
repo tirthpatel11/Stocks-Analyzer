@@ -1,14 +1,3 @@
-"""
-Supervisor Agent - Orchestrates the Multi-Agent Stock Analysis System
-
-This agent coordinates:
-- Market Data Agent
-- Technical Agent  
-- Risk Agent
-
-Using LangGraph for workflow orchestration
-"""
-
 import json
 from typing import Any, Dict, List, Literal, Optional, TypedDict, Annotated
 from operator import add
@@ -27,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 class AgentState(TypedDict):
-    """State definition for the multi-agent workflow"""
     messages: Annotated[List[Dict[str, Any]], add]
     ticker: str
     task: str
@@ -41,15 +29,6 @@ class AgentState(TypedDict):
 
 
 class SupervisorAgent(BaseAgent):
-    """
-    Supervisor Agent - Orchestrates the multi-agent workflow
-    
-    Responsibilities:
-    - Route tasks to appropriate agents
-    - Synthesize results from all agents
-    - Generate final recommendations
-    - Handle errors and coordination
-    """
     
     def __init__(self):
         super().__init__(
@@ -58,13 +37,11 @@ class SupervisorAgent(BaseAgent):
             temperature=0.3
         )
         
-        # Initialize sub-agents
         self.market_data_agent = MarketDataAgent()
         self.technical_agent = TechnicalAgent()
         self.risk_agent = RiskAgent()
         
     def _setup_tools(self) -> List[Any]:
-        """Supervisor doesn't use tools directly - it orchestrates other agents"""
         return []
     
     def _create_system_prompt(self) -> str:
@@ -105,15 +82,6 @@ Present your final synthesis in a structured format:
 5. Action Items and Monitoring Points"""
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the supervisor's final synthesis
-        
-        Args:
-            state: Current workflow state with all agent analyses
-            
-        Returns:
-            Updated state with final recommendation
-        """
         ticker = state.get("ticker", "")
         analysis_results = state.get("analysis_results", {})
         
@@ -125,12 +93,10 @@ Present your final synthesis in a structured format:
             }
         
         try:
-            # Extract key insights from each agent
             market_data = analysis_results.get("market_data", {})
             technical = analysis_results.get("technical", {})
             risk = analysis_results.get("risk", {})
             
-            # Prepare comprehensive synthesis prompt
             synthesis_data = self._prepare_synthesis_data(ticker, market_data, technical, risk)
             
             messages = [SystemMessage(content=self.system_prompt)]
@@ -160,20 +126,35 @@ Please provide:
 6. KEY MONITORING POINTS
 """))
             
-            final_analysis = await self._invoke_llm(messages)
-            
+            try:
+                final_analysis = await self._invoke_llm(messages)
+            except Exception as llm_err:
+                logger.error(f"Supervisor LLM error: {llm_err}")
+                final_analysis = (
+                    "AI synthesis was unavailable. Review the Market Data, Technical Analysis, "
+                    f"and Risk sections for quantitative results. ({llm_err})"
+                )
+                state = {
+                    **state,
+                    "errors": state.get("errors", [])
+                    + [f"Supervisor LLM error: {str(llm_err)}"],
+                }
+
             return {
                 **state,
                 "final_recommendation": final_analysis,
                 "current_agent": "SupervisorAgent",
                 "completed": True,
-                "messages": state.get("messages", []) + [{
-                    "role": "assistant",
-                    "agent": self.name,
-                    "content": final_analysis
-                }]
+                "messages": state.get("messages", [])
+                + [
+                    {
+                        "role": "assistant",
+                        "agent": self.name,
+                        "content": final_analysis,
+                    }
+                ],
             }
-            
+
         except Exception as e:
             logger.error(f"Supervisor execution error: {e}")
             return {
@@ -182,6 +163,15 @@ Please provide:
                 "completed": True
             }
     
+    @staticmethod
+    def _fmt(val, spec=",.2f"):
+        if val is None or val == 'N/A' or isinstance(val, str):
+            return 'N/A'
+        try:
+            return format(val, spec)
+        except (ValueError, TypeError):
+            return str(val)
+    
     def _prepare_synthesis_data(
         self, 
         ticker: str, 
@@ -189,24 +179,25 @@ Please provide:
         technical: Dict, 
         risk: Dict
     ) -> str:
-        """Prepare a comprehensive synthesis of all agent data"""
         
         synthesis = f"""
 === MULTI-AGENT ANALYSIS SYNTHESIS FOR {ticker} ===
 
 📊 MARKET DATA AGENT FINDINGS:
 """
-        # Market Data Section
         if market_data:
             stock_data = market_data.get("stock_data", {})
             tech_indicators = market_data.get("technical_indicators", {})
             fundamentals = market_data.get("fundamental_data", {})
             returns = market_data.get("returns_data", {})
             
+            avg_volume = stock_data.get('statistics', {}).get('avg_volume', 'N/A')
+            avg_volume_str = f"{avg_volume:,}" if isinstance(avg_volume, (int, float)) else str(avg_volume)
+            
             synthesis += f"""
 Price & Volume:
 - Current Price: ₹{stock_data.get('latest', {}).get('close', 'N/A')}
-- Average Volume: {stock_data.get('statistics', {}).get('avg_volume', 'N/A'):,}
+- Average Volume: {avg_volume_str}
 
 Key Indicators:
 - RSI: {tech_indicators.get('indicators', {}).get('momentum', {}).get('RSI', 'N/A')}
@@ -229,7 +220,6 @@ Market Data Agent Analysis:
 {market_data.get('llm_analysis', 'No analysis available')}
 """
         
-        # Technical Section
         synthesis += """
 📈 TECHNICAL AGENT FINDINGS:
 """
@@ -243,7 +233,8 @@ Market Data Agent Analysis:
 Market Regime:
 - Current Regime: {regime.get('regime', 'N/A')}
 - Confidence: {regime.get('confidence', 0) * 100:.0f}%
-- Trend Strength: {regime.get('metrics', {}).get('trend_strength_r2', 'N/A')}
+- ADX (Trend Strength): {regime.get('metrics', {}).get('adx', 'N/A')}
+- Volatility Regime: {regime.get('metrics', {}).get('volatility_regime', 'N/A')}
 
 Support & Resistance:
 - Nearest Resistance: ₹{sr.get('nearest_levels', {}).get('resistance', 'N/A')}
@@ -263,7 +254,6 @@ Technical Agent Analysis:
 {technical.get('llm_analysis', 'No analysis available')}
 """
         
-        # Risk Section
         synthesis += """
 ⚠️ RISK AGENT FINDINGS:
 """
@@ -273,14 +263,17 @@ Technical Agent Analysis:
             drawdown = risk.get("drawdown_analysis", {})
             limits = risk.get("risk_limits", {})
             
+            pos_value = position.get('position_sizing', {}).get('recommended', {}).get('value', 'N/A')
+            hist_var = var.get('value_at_risk', {}).get('95%', {}).get('historical', {}).get('var_dollar', 'N/A')
+            
             synthesis += f"""
 Position Sizing:
 - Recommended Shares: {position.get('position_sizing', {}).get('recommended', {}).get('shares', 'N/A')}
-- Position Value: ₹{position.get('position_sizing', {}).get('recommended', {}).get('value', 'N/A'):,.2f}
+- Position Value: ₹{self._fmt(pos_value)}
 - % of Account: {position.get('position_sizing', {}).get('recommended', {}).get('pct_of_account', 'N/A')}%
 
 Value at Risk (95%, 1-day):
-- Historical VaR: ₹{var.get('value_at_risk', {}).get('95%', {}).get('historical', {}).get('var_dollar', 'N/A'):,.2f}
+- Historical VaR: ₹{self._fmt(hist_var)}
 - VaR %: {var.get('value_at_risk', {}).get('95%', {}).get('historical', {}).get('var_pct', 'N/A')}%
 
 Drawdown Analysis:
@@ -304,76 +297,52 @@ Risk Agent Analysis:
 
 
 def create_stock_analysis_graph() -> StateGraph:
-    """
-    Create the LangGraph workflow for multi-agent stock analysis
     
-    Workflow:
-    1. Start -> Market Data Agent
-    2. Market Data Agent -> Technical Agent
-    3. Technical Agent -> Risk Agent
-    4. Risk Agent -> Supervisor Agent (synthesis)
-    5. Supervisor Agent -> End
-    
-    Returns:
-        Compiled StateGraph for the workflow
-    """
-    
-    # Initialize agents
     market_data_agent = MarketDataAgent()
     technical_agent = TechnicalAgent()
     risk_agent = RiskAgent()
     supervisor_agent = SupervisorAgent()
     
-    # Define node functions
     async def market_data_node(state: AgentState) -> AgentState:
-        """Execute Market Data Agent"""
         logger.info(f"Executing Market Data Agent for {state.get('ticker')}")
         result = await market_data_agent.execute(dict(state))
         return {**state, **result, "current_agent": "MarketDataAgent"}
     
     async def technical_node(state: AgentState) -> AgentState:
-        """Execute Technical Agent"""
         logger.info(f"Executing Technical Agent for {state.get('ticker')}")
         result = await technical_agent.execute(dict(state))
         return {**state, **result, "current_agent": "TechnicalAgent"}
     
     async def risk_node(state: AgentState) -> AgentState:
-        """Execute Risk Agent"""
         logger.info(f"Executing Risk Agent for {state.get('ticker')}")
         result = await risk_agent.execute(dict(state))
         return {**state, **result, "current_agent": "RiskAgent"}
     
     async def supervisor_node(state: AgentState) -> AgentState:
-        """Execute Supervisor Agent for final synthesis"""
         logger.info(f"Executing Supervisor Agent for {state.get('ticker')}")
         result = await supervisor_agent.execute(dict(state))
         return {**state, **result, "current_agent": "SupervisorAgent"}
     
     def should_continue(state: AgentState) -> Literal["continue", "end"]:
-        """Determine if workflow should continue or end"""
         if state.get("completed", False):
             return "end"
         if len(state.get("errors", [])) > 3:
             return "end"
         return "continue"
     
-    # Create the graph
     workflow = StateGraph(AgentState)
     
-    # Add nodes
     workflow.add_node("market_data", market_data_node)
     workflow.add_node("technical", technical_node)
     workflow.add_node("risk", risk_node)
     workflow.add_node("supervisor", supervisor_node)
     
-    # Define edges (sequential workflow)
     workflow.set_entry_point("market_data")
     workflow.add_edge("market_data", "technical")
     workflow.add_edge("technical", "risk")
     workflow.add_edge("risk", "supervisor")
     workflow.add_edge("supervisor", END)
     
-    # Compile the graph
     return workflow.compile()
 
 
@@ -383,20 +352,7 @@ async def run_analysis(
     account_size: float = 100000.0,
     risk_tolerance: str = "moderate"
 ) -> Dict[str, Any]:
-    """
-    Run the complete multi-agent stock analysis
     
-    Args:
-        ticker: Stock ticker symbol
-        task: Analysis task description
-        account_size: Portfolio/account size for position sizing
-        risk_tolerance: Risk tolerance level (conservative/moderate/aggressive)
-        
-    Returns:
-        Complete analysis results from all agents
-    """
-    
-    # Create initial state
     initial_state: AgentState = {
         "messages": [],
         "ticker": ticker.upper(),
@@ -410,11 +366,9 @@ async def run_analysis(
         "completed": False
     }
     
-    # Create and run the graph
     graph = create_stock_analysis_graph()
     
     try:
-        # Execute the workflow
         final_state = await graph.ainvoke(initial_state)
         
         return {
@@ -434,4 +388,3 @@ async def run_analysis(
             "error": str(e),
             "errors": [str(e)]
         }
-

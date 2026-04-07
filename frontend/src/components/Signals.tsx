@@ -3,9 +3,9 @@ import {
   TrendingUp, TrendingDown, Minus, Search, Loader2, 
   Target, Shield, AlertTriangle, CheckCircle, XCircle,
   ChevronDown, ChevronUp, Zap, Star, Activity,
-  ArrowUpRight, ArrowDownRight, Clock, BarChart3
+  ArrowUpRight, BarChart3
 } from 'lucide-react';
-import stockApi from '../services/api';
+import { buildApiUrl } from '../config/apiBase';
 
 interface SignalData {
   success: boolean;
@@ -130,25 +130,45 @@ export function Signals() {
   const [showIndicators, setShowIndicators] = useState(false);
   const [showAIAnalysis, setShowAIAnalysis] = useState(true);
 
-  const fetchSignal = async (withAI: boolean = true) => {
-    if (!ticker.trim()) return;
-    
+  const normalizeTicker = (t: string): string => {
+    const upper = t.trim().toUpperCase();
+    if (!upper) return upper;
+    if (!upper.endsWith('.NS') && !upper.endsWith('.BO')) {
+      return `${upper}.NS`;
+    }
+    return upper;
+  };
+
+  const fetchSignal = async (withAI: boolean = true, tickerOverride?: string) => {
+    const raw = (tickerOverride ?? ticker).trim();
+    if (!raw) return;
+
+    const normalizedTicker = normalizeTicker(raw);
+    setTicker(normalizedTicker);
+
     setIsLoading(true);
     setError(null);
-    
+
     try {
-      const endpoint = withAI 
-        ? `/signals/${ticker.toUpperCase()}/analyze`
-        : `/signals/${ticker.toUpperCase()}`;
-      
-      const response = await fetch(`http://127.0.0.1:8000${endpoint}`, {
-        method: withAI ? 'POST' : 'GET'
+      const enc = encodeURIComponent(normalizedTicker);
+      const path = withAI ? `/signals/${enc}/analyze` : `/signals/${enc}`;
+      const response = await fetch(buildApiUrl(path), {
+        method: withAI ? 'POST' : 'GET',
       });
-      
+
       if (!response.ok) {
-        throw new Error(`Failed to fetch signal for ${ticker}`);
+        let detail = `${response.status} ${response.statusText}`;
+        try {
+          const body = await response.json();
+          if (body && typeof body.detail === 'string') {
+            detail = body.detail;
+          }
+        } catch {
+          /* ignore */
+        }
+        throw new Error(detail);
       }
-      
+
       const data = await response.json();
       setSignal(data);
     } catch (err) {
@@ -170,7 +190,6 @@ export function Signals() {
 
   return (
     <div className="space-y-6">
-      {/* Search Section */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-3 mb-6">
           <div className="p-3 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20">
@@ -215,17 +234,13 @@ export function Signals() {
             </button>
           </div>
 
-          {/* Quick ticker buttons */}
           <div className="flex flex-wrap gap-2">
             <span className="text-sm text-slate-400">Popular:</span>
             {popularTickers.map((t) => (
               <button
                 key={t}
                 type="button"
-                onClick={() => {
-                  setTicker(t);
-                  setTimeout(() => fetchSignal(true), 100);
-                }}
+                onClick={() => fetchSignal(true, t)}
                 className="px-3 py-1 text-sm font-mono bg-slate-800/50 hover:bg-slate-700/50 
                            border border-slate-600/50 rounded-lg transition-colors text-slate-300"
               >
@@ -243,10 +258,8 @@ export function Signals() {
         )}
       </div>
 
-      {/* Signal Results */}
       {signal && config && (
         <div className="space-y-6">
-          {/* Main Signal Card */}
           <div className={`glass-card overflow-hidden ${config.borderColor} border-2`}>
             <div className={`p-6 bg-gradient-to-r ${config.bgGradient} to-transparent`}>
               <div className="flex items-center justify-between flex-wrap gap-4">
@@ -279,9 +292,7 @@ export function Signals() {
               </div>
             </div>
 
-            {/* Entry/Exit Levels */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-6 border-t border-slate-700/50">
-              {/* Entry Zone */}
               {signal.entry.zone_low && (
                 <div className="bg-slate-800/30 rounded-xl p-4">
                   <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
@@ -297,7 +308,6 @@ export function Signals() {
                 </div>
               )}
 
-              {/* Stop Loss */}
               <div className="bg-slate-800/30 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
                   <Shield className="w-4 h-4 text-rose-400" />
@@ -311,7 +321,6 @@ export function Signals() {
                 </div>
               </div>
 
-              {/* Target 1 */}
               <div className="bg-slate-800/30 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
                   <ArrowUpRight className="w-4 h-4 text-emerald-400" />
@@ -325,7 +334,6 @@ export function Signals() {
                 </div>
               </div>
 
-              {/* Target 2 */}
               <div className="bg-slate-800/30 rounded-xl p-4">
                 <div className="flex items-center gap-2 text-sm text-slate-400 mb-2">
                   <ArrowUpRight className="w-4 h-4 text-emerald-400" />
@@ -340,7 +348,6 @@ export function Signals() {
               </div>
             </div>
 
-            {/* Risk/Reward */}
             {signal.risk_reward_ratio > 0 && (
               <div className="px-6 pb-6">
                 <div className="bg-gradient-to-r from-emerald-500/10 to-sky-500/10 border border-emerald-500/20 rounded-xl p-4 flex items-center justify-between">
@@ -364,9 +371,7 @@ export function Signals() {
             )}
           </div>
 
-          {/* Reasons */}
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Bullish Reasons */}
             <div className="glass-card p-6">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
                 <CheckCircle className="w-5 h-5 text-emerald-400" />
@@ -385,7 +390,6 @@ export function Signals() {
               </ul>
             </div>
 
-            {/* Bearish Reasons */}
             <div className="glass-card p-6">
               <h3 className="text-lg font-semibold text-white flex items-center gap-2 mb-4">
                 <AlertTriangle className="w-5 h-5 text-rose-400" />
@@ -405,7 +409,6 @@ export function Signals() {
             </div>
           </div>
 
-          {/* AI Analysis */}
           {signal.ai_analysis && (
             <div className="glass-card overflow-hidden">
               <button
@@ -432,7 +435,6 @@ export function Signals() {
             </div>
           )}
 
-          {/* Technical Indicators */}
           <div className="glass-card overflow-hidden">
             <button
               onClick={() => setShowIndicators(!showIndicators)}
@@ -451,7 +453,6 @@ export function Signals() {
             {showIndicators && (
               <div className="p-6 pt-0 border-t border-slate-700/50">
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                  {/* RSI */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">RSI (14)</div>
                     <div className={`text-2xl font-bold ${
@@ -470,7 +471,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* MACD */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">MACD</div>
                     <div className={`text-2xl font-bold ${
@@ -492,7 +492,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* Trend */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">Trend</div>
                     <div className={`text-lg font-bold ${
@@ -505,7 +504,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* Volume */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">Volume</div>
                     <div className={`text-2xl font-bold ${
@@ -522,7 +520,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* Support */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">Support</div>
                     <div className="text-xl font-bold text-emerald-400">
@@ -530,7 +527,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* Resistance */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">Resistance</div>
                     <div className="text-xl font-bold text-rose-400">
@@ -538,7 +534,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* 52W High */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">52W High</div>
                     <div className="text-xl font-bold text-white">
@@ -551,7 +546,6 @@ export function Signals() {
                     </div>
                   </div>
 
-                  {/* ATR */}
                   <div className="bg-slate-800/30 rounded-xl p-4">
                     <div className="text-sm text-slate-400 mb-1">ATR (Volatility)</div>
                     <div className="text-xl font-bold text-white">
@@ -568,7 +562,6 @@ export function Signals() {
         </div>
       )}
 
-      {/* Empty State */}
       {!signal && !isLoading && (
         <div className="text-center py-16">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-slate-800/50 mb-6">

@@ -10,10 +10,10 @@ interface StockChartProps {
 export function StockChart({ ticker }: StockChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
-  const candleSeriesRef = useRef<ReturnType<typeof CandlestickSeries.prototype.create> | null>(null);
-  const volumeSeriesRef = useRef<ReturnType<typeof HistogramSeries.prototype.create> | null>(null);
-  const sma20SeriesRef = useRef<ReturnType<typeof LineSeries.prototype.create> | null>(null);
-  const sma50SeriesRef = useRef<ReturnType<typeof LineSeries.prototype.create> | null>(null);
+  const candleSeriesRef = useRef<any>(null);
+  const volumeSeriesRef = useRef<any>(null);
+  const sma20SeriesRef = useRef<any>(null);
+  const sma50SeriesRef = useRef<any>(null);
   
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -40,17 +40,14 @@ export function StockChart({ ticker }: StockChartProps) {
       const data = await stockApi.getChartData(ticker, period);
       
       if (data.success && chartRef.current) {
-        // Update candle series
         if (candleSeriesRef.current) {
           candleSeriesRef.current.setData(data.candles);
         }
         
-        // Update volume series
         if (volumeSeriesRef.current) {
           volumeSeriesRef.current.setData(data.volumes);
         }
         
-        // Update SMA lines
         if (sma20SeriesRef.current) {
           sma20SeriesRef.current.setData(data.sma20);
         }
@@ -58,7 +55,6 @@ export function StockChart({ ticker }: StockChartProps) {
           sma50SeriesRef.current.setData(data.sma50);
         }
         
-        // Calculate price change
         if (data.candles.length > 1) {
           const latest = data.candles[data.candles.length - 1];
           const previous = data.candles[data.candles.length - 2];
@@ -67,7 +63,6 @@ export function StockChart({ ticker }: StockChartProps) {
           setPriceChange(change);
         }
         
-        // Fit content
         chartRef.current.timeScale().fitContent();
       }
     } catch (err) {
@@ -81,7 +76,6 @@ export function StockChart({ ticker }: StockChartProps) {
   useEffect(() => {
     if (!chartContainerRef.current) return;
     
-    // Create chart
     const chart = createChart(chartContainerRef.current, {
       layout: {
         background: { type: ColorType.Solid, color: 'transparent' },
@@ -123,7 +117,6 @@ export function StockChart({ ticker }: StockChartProps) {
     
     chartRef.current = chart;
     
-    // Add candlestick series
     const candleSeries = chart.addSeries(CandlestickSeries, {
       upColor: '#22c55e',
       downColor: '#ef4444',
@@ -134,7 +127,6 @@ export function StockChart({ ticker }: StockChartProps) {
     });
     candleSeriesRef.current = candleSeries;
     
-    // Add volume series
     const volumeSeries = chart.addSeries(HistogramSeries, {
       color: '#6366f1',
       priceFormat: {
@@ -150,7 +142,6 @@ export function StockChart({ ticker }: StockChartProps) {
     });
     volumeSeriesRef.current = volumeSeries;
     
-    // Add SMA 20 line
     const sma20Series = chart.addSeries(LineSeries, {
       color: '#f59e0b',
       lineWidth: 1,
@@ -158,7 +149,6 @@ export function StockChart({ ticker }: StockChartProps) {
     });
     sma20SeriesRef.current = sma20Series;
     
-    // Add SMA 50 line
     const sma50Series = chart.addSeries(LineSeries, {
       color: '#8b5cf6',
       lineWidth: 1,
@@ -166,7 +156,6 @@ export function StockChart({ ticker }: StockChartProps) {
     });
     sma50SeriesRef.current = sma50Series;
     
-    // Handle resize
     const handleResize = () => {
       if (chartContainerRef.current) {
         chart.applyOptions({
@@ -209,7 +198,6 @@ export function StockChart({ ticker }: StockChartProps) {
 
   return (
     <div className="glass-card p-4">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
         <div className="flex items-center gap-3">
           <BarChart3 className="w-5 h-5 text-sky-400" />
@@ -236,7 +224,6 @@ export function StockChart({ ticker }: StockChartProps) {
         </button>
       </div>
       
-      {/* Period Selector */}
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="flex bg-slate-800/50 rounded-lg p-1">
           {periods.map((p) => (
@@ -288,7 +275,6 @@ export function StockChart({ ticker }: StockChartProps) {
         </div>
       </div>
       
-      {/* Chart Container */}
       <div className="relative">
         {isLoading && (
           <div className="absolute inset-0 flex items-center justify-center bg-slate-900/50 z-10 rounded-lg">
@@ -312,7 +298,6 @@ export function StockChart({ ticker }: StockChartProps) {
         />
       </div>
       
-      {/* Legend */}
       <div className="flex items-center gap-4 mt-3 text-xs text-slate-500">
         <div className="flex items-center gap-1">
           <div className="w-3 h-3 rounded bg-emerald-500"></div>

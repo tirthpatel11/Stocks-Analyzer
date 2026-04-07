@@ -1,9 +1,8 @@
 import { useState, useEffect } from 'react';
 import { 
   Search, Filter, TrendingUp, TrendingDown, BarChart3, 
-  Target, Shield, Zap, Gift, Star, AlertTriangle,
-  ChevronDown, ChevronUp, Loader2, RefreshCw, Sparkles,
-  IndianRupee, Percent, Activity
+  Target, Shield, Zap, Gift, Star,
+  ChevronDown, ChevronUp, Loader2, Sparkles
 } from 'lucide-react';
 import stockApi from '../services/api';
 
@@ -84,7 +83,6 @@ export function Screener() {
     ascending: false 
   });
 
-  // Fetch presets on mount
   useEffect(() => {
     const fetchPresets = async () => {
       try {
@@ -155,7 +153,6 @@ export function Screener() {
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div className="glass-card p-6">
         <div className="flex items-center gap-3 mb-4">
           <div className="p-3 rounded-xl bg-gradient-to-br from-sky-500/20 to-purple-500/20">
@@ -167,7 +164,6 @@ export function Screener() {
           </div>
         </div>
 
-        {/* Preset Selection */}
         <div className="mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-3">Select Strategy</h3>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -202,7 +198,6 @@ export function Screener() {
           </div>
         </div>
 
-        {/* Custom Filters Toggle */}
         <button
           onClick={() => setShowCustomFilters(!showCustomFilters)}
           className="text-sm text-sky-400 hover:text-sky-300 transition-colors flex items-center gap-1 mb-4"
@@ -211,7 +206,6 @@ export function Screener() {
           {showCustomFilters ? 'Hide Custom Filters' : 'Show Custom Filters'}
         </button>
 
-        {/* Custom Filters */}
         {showCustomFilters && (
           <div className="bg-slate-800/30 rounded-xl p-4 mb-6 space-y-4">
             <h4 className="font-medium text-white flex items-center gap-2">
@@ -220,7 +214,6 @@ export function Screener() {
             </h4>
             
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {/* Valuation */}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Max P/E Ratio</label>
                 <input
@@ -240,7 +233,6 @@ export function Screener() {
                 />
               </div>
               
-              {/* Profitability */}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Min ROE (%)</label>
                 <input
@@ -260,7 +252,6 @@ export function Screener() {
                 />
               </div>
               
-              {/* Growth */}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Min Revenue Growth (%)</label>
                 <input
@@ -280,7 +271,6 @@ export function Screener() {
                 />
               </div>
               
-              {/* Technical */}
               <div>
                 <label className="text-xs text-slate-400 mb-1 block">Max RSI</label>
                 <input
@@ -301,7 +291,6 @@ export function Screener() {
               </div>
             </div>
 
-            {/* Boolean filters */}
             <div className="flex flex-wrap gap-4 pt-2">
               <label className="flex items-center gap-2 text-sm text-slate-300 cursor-pointer">
                 <input
@@ -323,7 +312,6 @@ export function Screener() {
           </div>
         )}
 
-        {/* Sector Selection */}
         <div className="mb-6">
           <h3 className="text-sm font-medium text-slate-400 mb-3">Filter by Sector (Optional)</h3>
           <div className="flex flex-wrap gap-2">
@@ -343,7 +331,6 @@ export function Screener() {
           </div>
         </div>
 
-        {/* Run Button */}
         <button
           onClick={runScreen}
           disabled={isLoading}
@@ -363,10 +350,8 @@ export function Screener() {
         </button>
       </div>
 
-      {/* Results */}
       {results && (
         <div className="space-y-6">
-          {/* Summary */}
           <div className="glass-card p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
@@ -379,7 +364,6 @@ export function Screener() {
               </div>
             </div>
 
-            {/* Applied Filters */}
             <div className="flex flex-wrap gap-2">
               {Object.entries(results.filters_applied).map(([key, value]) => (
                 <span key={key} className="px-2 py-1 rounded-md bg-slate-800/50 text-xs text-slate-300">
@@ -389,7 +373,6 @@ export function Screener() {
             </div>
           </div>
 
-          {/* AI Insights */}
           {results.ai_insights && (
             <div className="glass-card overflow-hidden">
               <button
@@ -416,7 +399,6 @@ export function Screener() {
             </div>
           )}
 
-          {/* Results Table */}
           {sortedResults.length > 0 && (
             <div className="glass-card overflow-hidden">
               <div className="p-4 border-b border-slate-700/50">
@@ -506,7 +488,6 @@ export function Screener() {
   );
 }
 
-// Sortable Header Component
 function SortableHeader({ 
   label, 
   sortKey, 

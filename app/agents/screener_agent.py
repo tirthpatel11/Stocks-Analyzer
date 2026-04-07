@@ -1,14 +1,3 @@
-"""
-Stock Screener Agent — AI-Powered Stock Discovery
-
-This agent is responsible for:
-- Screening stocks based on fundamental criteria
-- Technical momentum filters
-- Value investing filters
-- Quality metrics screening
-- AI-powered stock recommendations
-"""
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -24,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 def convert_numpy_types(obj):
-    """Recursively convert numpy types to Python native types for JSON serialization"""
     if isinstance(obj, dict):
         return {k: convert_numpy_types(v) for k, v in obj.items()}
     elif isinstance(obj, list):
@@ -45,7 +33,6 @@ def convert_numpy_types(obj):
         return None
     return obj
 
-# Indian Stock Universe - Nifty 500 representative stocks
 INDIAN_STOCK_UNIVERSE = {
     "large_cap": [
         "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
@@ -94,28 +81,17 @@ INDIAN_STOCK_UNIVERSE = {
 
 
 class ScreenerAgent(BaseAgent):
-    """
-    Stock Screener Agent - AI-Powered Stock Discovery
-    
-    Supports multiple screening strategies:
-    - Fundamental filters (P/E, P/B, ROE, etc.)
-    - Technical filters (RSI, MACD, moving averages)
-    - Momentum filters (52-week high, volume breakout)
-    - Value filters (Graham criteria, margin of safety)
-    - Quality filters (consistent growth, low debt)
-    """
-    
+
     def __init__(self):
         super().__init__(
             name="ScreenerAgent",
             description="AI-powered stock screener with multiple filter strategies",
             temperature=0.3
         )
-    
+
     def _setup_tools(self) -> List[Any]:
-        """Set up screening tools"""
         return []
-    
+
     def _create_system_prompt(self) -> str:
         return """You are the Stock Screener Agent, an AI specialized in discovering investment opportunities in the INDIAN STOCK MARKET.
 
@@ -144,84 +120,73 @@ Output Format:
 
     @staticmethod
     def get_stock_universe(sectors: Optional[List[str]] = None, cap: Optional[str] = None) -> List[str]:
-        """Get list of stocks to screen based on sector/cap filters"""
         stocks = set()
-        
+
         if sectors:
             for sector in sectors:
                 sector_lower = sector.lower()
                 if sector_lower in INDIAN_STOCK_UNIVERSE:
                     stocks.update(INDIAN_STOCK_UNIVERSE[sector_lower])
-        
+
         if cap:
             cap_lower = cap.lower()
             if cap_lower in ["large", "large_cap"]:
                 stocks.update(INDIAN_STOCK_UNIVERSE["large_cap"])
             elif cap_lower in ["mid", "mid_cap"]:
                 stocks.update(INDIAN_STOCK_UNIVERSE["mid_cap"])
-        
-        # Default: use large cap if nothing specified
+
         if not stocks:
             stocks.update(INDIAN_STOCK_UNIVERSE["large_cap"])
-        
+
         return list(stocks)
 
     @staticmethod
     def fetch_stock_metrics(ticker: str) -> Dict[str, Any]:
-        """Fetch all metrics for a single stock"""
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
             hist = stock.history(period="1y")
-            
+
             if hist.empty or len(hist) < 50:
                 return {"ticker": ticker, "error": "Insufficient data"}
-            
+
             current_price = hist['Close'].iloc[-1]
-            
-            # Price metrics
+
             high_52w = hist['Close'].max()
             low_52w = hist['Close'].min()
             pct_from_high = ((current_price - high_52w) / high_52w) * 100
             pct_from_low = ((current_price - low_52w) / low_52w) * 100
-            
-            # Returns
+
             returns_1m = ((current_price / hist['Close'].iloc[-22]) - 1) * 100 if len(hist) >= 22 else None
             returns_3m = ((current_price / hist['Close'].iloc[-66]) - 1) * 100 if len(hist) >= 66 else None
             returns_6m = ((current_price / hist['Close'].iloc[-126]) - 1) * 100 if len(hist) >= 126 else None
             returns_1y = ((current_price / hist['Close'].iloc[0]) - 1) * 100
-            
-            # Technical indicators
+
             sma_50 = hist['Close'].rolling(50).mean().iloc[-1] if len(hist) >= 50 else None
             sma_200 = hist['Close'].rolling(200).mean().iloc[-1] if len(hist) >= 200 else None
-            
-            # RSI
+
             delta = hist['Close'].diff()
             gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
             loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
             rs = gain / loss
             rsi = 100 - (100 / (1 + rs)).iloc[-1]
-            
-            # Volume analysis
+
             avg_volume = hist['Volume'].mean()
             recent_volume = hist['Volume'].iloc[-5:].mean()
             volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1
-            
-            # Volatility
+
             daily_returns = hist['Close'].pct_change().dropna()
             volatility = daily_returns.std() * np.sqrt(252) * 100
-            
-            # Fundamental metrics from info
+
             pe_ratio = info.get('trailingPE')
             forward_pe = info.get('forwardPE')
             pb_ratio = info.get('priceToBook')
             ps_ratio = info.get('priceToSalesTrailing12Months')
             peg_ratio = info.get('pegRatio')
-            
+
             market_cap = info.get('marketCap', 0)
             enterprise_value = info.get('enterpriseValue')
-            
-            # Profitability
+
             roe = info.get('returnOnEquity', 0)
             if roe:
                 roe = roe * 100
@@ -234,29 +199,25 @@ Output Format:
             operating_margin = info.get('operatingMargins', 0)
             if operating_margin:
                 operating_margin = operating_margin * 100
-            
-            # Growth
+
             revenue_growth = info.get('revenueGrowth', 0)
             if revenue_growth:
                 revenue_growth = revenue_growth * 100
             earnings_growth = info.get('earningsGrowth', 0)
             if earnings_growth:
                 earnings_growth = earnings_growth * 100
-            
-            # Dividend
+
             dividend_yield = info.get('dividendYield', 0)
             if dividend_yield:
                 dividend_yield = dividend_yield * 100
-            
-            # Debt
+
             debt_to_equity = info.get('debtToEquity')
             current_ratio = info.get('currentRatio')
-            
-            # Company info
+
             company_name = info.get('shortName', ticker)
             sector = info.get('sector', 'Unknown')
             industry = info.get('industry', 'Unknown')
-            
+
             return convert_numpy_types({
                 "ticker": ticker,
                 "company_name": company_name,
@@ -265,58 +226,49 @@ Output Format:
                 "current_price": round(current_price, 2),
                 "market_cap": market_cap,
                 "market_cap_cr": round(market_cap / 10000000, 2) if market_cap else None,
-                
-                # Valuation
+
                 "pe_ratio": round(pe_ratio, 2) if pe_ratio else None,
                 "forward_pe": round(forward_pe, 2) if forward_pe else None,
                 "pb_ratio": round(pb_ratio, 2) if pb_ratio else None,
                 "ps_ratio": round(ps_ratio, 2) if ps_ratio else None,
                 "peg_ratio": round(peg_ratio, 2) if peg_ratio else None,
-                
-                # Price metrics
+
                 "high_52w": round(high_52w, 2),
                 "low_52w": round(low_52w, 2),
                 "pct_from_52w_high": round(pct_from_high, 2),
                 "pct_from_52w_low": round(pct_from_low, 2),
-                
-                # Returns
+
                 "returns_1m": round(returns_1m, 2) if returns_1m else None,
                 "returns_3m": round(returns_3m, 2) if returns_3m else None,
                 "returns_6m": round(returns_6m, 2) if returns_6m else None,
                 "returns_1y": round(returns_1y, 2),
-                
-                # Technical
+
                 "sma_50": round(sma_50, 2) if sma_50 else None,
                 "sma_200": round(sma_200, 2) if sma_200 else None,
                 "above_sma_50": current_price > sma_50 if sma_50 else None,
                 "above_sma_200": current_price > sma_200 if sma_200 else None,
                 "rsi": round(rsi, 2) if not np.isnan(rsi) else None,
                 "volatility_pct": round(volatility, 2),
-                
-                # Volume
+
                 "avg_volume": int(avg_volume),
                 "volume_ratio": round(volume_ratio, 2),
-                
-                # Profitability
+
                 "roe": round(roe, 2) if roe else None,
                 "roa": round(roa, 2) if roa else None,
                 "profit_margin": round(profit_margin, 2) if profit_margin else None,
                 "operating_margin": round(operating_margin, 2) if operating_margin else None,
-                
-                # Growth
+
                 "revenue_growth": round(revenue_growth, 2) if revenue_growth else None,
                 "earnings_growth": round(earnings_growth, 2) if earnings_growth else None,
-                
-                # Dividend
+
                 "dividend_yield": round(dividend_yield, 2) if dividend_yield else None,
-                
-                # Debt
+
                 "debt_to_equity": round(debt_to_equity, 2) if debt_to_equity else None,
                 "current_ratio": round(current_ratio, 2) if current_ratio else None,
-                
+
                 "success": True
             })
-            
+
         except Exception as e:
             logger.error(f"Error fetching metrics for {ticker}: {e}")
             return {"ticker": ticker, "error": str(e), "success": False}
@@ -327,24 +279,12 @@ Output Format:
         filters: Dict[str, Any],
         max_workers: int = 10
     ) -> List[Dict[str, Any]]:
-        """
-        Screen stocks based on filters
-        
-        Args:
-            universe: List of tickers to screen
-            filters: Dictionary of filter criteria
-            max_workers: Number of parallel workers
-            
-        Returns:
-            List of stocks passing all filters
-        """
         results = []
-        
-        # Fetch data in parallel
+
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(ScreenerAgent.fetch_stock_metrics, ticker): ticker 
+            futures = {executor.submit(ScreenerAgent.fetch_stock_metrics, ticker): ticker
                       for ticker in universe}
-            
+
             for future in as_completed(futures):
                 try:
                     data = future.result()
@@ -352,111 +292,99 @@ Output Format:
                         results.append(data)
                 except Exception as e:
                     logger.error(f"Error processing stock: {e}")
-        
-        # Apply filters
+
         filtered_results = []
         for stock in results:
             if ScreenerAgent._apply_filters(stock, filters):
                 filtered_results.append(stock)
-        
+
         return filtered_results
 
     @staticmethod
     def _apply_filters(stock: Dict[str, Any], filters: Dict[str, Any]) -> bool:
-        """Apply all filters to a stock"""
-        
-        # Valuation filters
+
         if "pe_max" in filters and stock.get("pe_ratio"):
             if stock["pe_ratio"] > filters["pe_max"]:
                 return False
-        
+
         if "pe_min" in filters and stock.get("pe_ratio"):
             if stock["pe_ratio"] < filters["pe_min"]:
                 return False
-        
+
         if "pb_max" in filters and stock.get("pb_ratio"):
             if stock["pb_ratio"] > filters["pb_max"]:
                 return False
-        
+
         if "peg_max" in filters and stock.get("peg_ratio"):
             if stock["peg_ratio"] > filters["peg_max"]:
                 return False
-        
-        # Profitability filters
+
         if "roe_min" in filters and stock.get("roe"):
             if stock["roe"] < filters["roe_min"]:
                 return False
-        
+
         if "profit_margin_min" in filters and stock.get("profit_margin"):
             if stock["profit_margin"] < filters["profit_margin_min"]:
                 return False
-        
-        # Growth filters
+
         if "revenue_growth_min" in filters and stock.get("revenue_growth"):
             if stock["revenue_growth"] < filters["revenue_growth_min"]:
                 return False
-        
+
         if "earnings_growth_min" in filters and stock.get("earnings_growth"):
             if stock["earnings_growth"] < filters["earnings_growth_min"]:
                 return False
-        
-        # Technical filters
+
         if "rsi_max" in filters and stock.get("rsi"):
             if stock["rsi"] > filters["rsi_max"]:
                 return False
-        
+
         if "rsi_min" in filters and stock.get("rsi"):
             if stock["rsi"] < filters["rsi_min"]:
                 return False
-        
+
         if filters.get("above_sma_50") and not stock.get("above_sma_50"):
             return False
-        
+
         if filters.get("above_sma_200") and not stock.get("above_sma_200"):
             return False
-        
-        # Momentum filters
+
         if "returns_1m_min" in filters and stock.get("returns_1m"):
             if stock["returns_1m"] < filters["returns_1m_min"]:
                 return False
-        
+
         if "returns_3m_min" in filters and stock.get("returns_3m"):
             if stock["returns_3m"] < filters["returns_3m_min"]:
                 return False
-        
+
         if "pct_from_high_max" in filters:
             if stock.get("pct_from_52w_high", -100) < filters["pct_from_high_max"]:
                 return False
-        
-        # Volume filter
+
         if "volume_ratio_min" in filters:
             if stock.get("volume_ratio", 0) < filters["volume_ratio_min"]:
                 return False
-        
-        # Debt filter
+
         if "debt_to_equity_max" in filters and stock.get("debt_to_equity"):
             if stock["debt_to_equity"] > filters["debt_to_equity_max"]:
                 return False
-        
-        # Dividend filter
+
         if "dividend_yield_min" in filters and stock.get("dividend_yield"):
             if stock["dividend_yield"] < filters["dividend_yield_min"]:
                 return False
-        
-        # Market cap filter (in Cr)
+
         if "market_cap_min" in filters and stock.get("market_cap_cr"):
             if stock["market_cap_cr"] < filters["market_cap_min"]:
                 return False
-        
+
         if "market_cap_max" in filters and stock.get("market_cap_cr"):
             if stock["market_cap_cr"] > filters["market_cap_max"]:
                 return False
-        
+
         return True
 
     @staticmethod
     def get_preset_screens() -> Dict[str, Dict[str, Any]]:
-        """Get predefined screening strategies"""
         return {
             "value_picks": {
                 "name": "Value Picks",
@@ -487,7 +415,7 @@ Output Format:
                 "name": "Momentum Leaders",
                 "description": "Stocks near 52-week highs with volume",
                 "filters": {
-                    "pct_from_high_max": -10,  # Within 10% of 52-week high
+                    "pct_from_high_max": -10,
                     "above_sma_50": True,
                     "above_sma_200": True,
                     "volume_ratio_min": 1.2,
@@ -546,8 +474,8 @@ Output Format:
                 "name": "Small Cap Gems",
                 "description": "Smaller companies with growth potential",
                 "filters": {
-                    "market_cap_min": 1000,  # 1000 Cr minimum
-                    "market_cap_max": 20000,  # 20000 Cr maximum
+                    "market_cap_min": 1000,
+                    "market_cap_max": 20000,
                     "roe_min": 15,
                     "revenue_growth_min": 15,
                     "debt_to_equity_max": 80
@@ -564,22 +492,9 @@ Output Format:
         custom_filters: Optional[Dict[str, Any]] = None,
         top_n: int = 10
     ) -> Dict[str, Any]:
-        """
-        Run a screen with AI analysis
-        
-        Args:
-            screen_type: Preset screen type or "custom"
-            sectors: Sectors to screen
-            custom_filters: Custom filter criteria
-            top_n: Number of top results to return
-            
-        Returns:
-            Screened stocks with AI insights
-        """
         try:
-            # Get filters
             presets = self.get_preset_screens()
-            
+
             if screen_type == "custom" and custom_filters:
                 filters = custom_filters
                 screen_name = "Custom Screen"
@@ -594,13 +509,11 @@ Output Format:
                     "success": False,
                     "error": f"Unknown screen type: {screen_type}"
                 }
-            
-            # Get stock universe
+
             universe = self.get_stock_universe(sectors)
-            
-            # Run screen
+
             results = self.screen_stocks(universe, filters)
-            
+
             if not results:
                 return {
                     "success": True,
@@ -612,25 +525,22 @@ Output Format:
                     "results": [],
                     "ai_insights": "No stocks passed the screening criteria. Consider relaxing some filters."
                 }
-            
-            # Sort results
+
             sort_key = presets.get(screen_type, {}).get("sort_by", "pe_ratio")
             sort_asc = presets.get(screen_type, {}).get("sort_ascending", True)
-            
-            # Handle None values in sorting
+
             results_sorted = sorted(
                 results,
                 key=lambda x: (x.get(sort_key) is None, x.get(sort_key) or 0),
                 reverse=not sort_asc
             )
-            
+
             top_results = results_sorted[:top_n]
-            
-            # Generate AI insights
+
             ai_insights = await self._generate_ai_insights(
                 screen_name, screen_desc, filters, top_results
             )
-            
+
             return {
                 "success": True,
                 "screen_name": screen_name,
@@ -641,7 +551,7 @@ Output Format:
                 "results": top_results,
                 "ai_insights": ai_insights
             }
-            
+
         except Exception as e:
             logger.error(f"Screener error: {e}")
             return {
@@ -656,14 +566,12 @@ Output Format:
         filters: Dict[str, Any],
         results: List[Dict[str, Any]]
     ) -> str:
-        """Generate AI insights for screened stocks"""
-        
+
         if not results:
             return "No stocks to analyze."
-        
-        # Prepare summary
+
         stocks_summary = []
-        for stock in results[:5]:  # Top 5 for detailed analysis
+        for stock in results[:5]:
             summary = f"""
 {stock['ticker']} ({stock.get('company_name', 'N/A')}):
 - Sector: {stock.get('sector', 'N/A')}
@@ -674,7 +582,7 @@ Output Format:
 - Revenue Growth: {stock.get('revenue_growth', 'N/A')}%
 """
             stocks_summary.append(summary)
-        
+
         messages = [
             SystemMessage(content=self.system_prompt),
             HumanMessage(content=f"""
@@ -696,7 +604,7 @@ Please provide:
 Keep the analysis concise but actionable. Use ₹ for all currency values.
 """)
         ]
-        
+
         try:
             return await self._invoke_llm(messages)
         except Exception as e:
@@ -704,21 +612,19 @@ Keep the analysis concise but actionable. Use ₹ for all currency values.
             return f"AI analysis unavailable: {str(e)}"
 
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """Execute the screener agent"""
         screen_type = state.get("screen_type", "value_picks")
         sectors = state.get("sectors")
         custom_filters = state.get("custom_filters")
         top_n = state.get("top_n", 10)
-        
+
         result = await self.run_screen_with_ai(
             screen_type=screen_type,
             sectors=sectors,
             custom_filters=custom_filters,
             top_n=top_n
         )
-        
+
         return {
             **state,
             "screener_results": result
         }
-

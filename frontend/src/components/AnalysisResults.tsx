@@ -27,16 +27,13 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
   const { analysis_results, final_recommendation, ticker, realtime_quote, data_source, errors } = data;
   const { market_data, technical, risk } = analysis_results;
   
-  // Check if we have rate limit errors
   const hasRateLimitError = errors && errors.some(e => e.includes('rate_limit') || e.includes('Rate limit'));
   const hasErrors = errors && errors.length > 0;
-  
-  // Use real-time price if available, otherwise fall back to historical
+
   const currentPrice = realtime_quote?.last_price || market_data?.stock_data?.latest?.close;
   const priceChange = realtime_quote?.change_pct;
   const isRealtime = realtime_quote?.source === 'NSE_REALTIME';
 
-  // Parse recommendation for action
   const getRecommendationAction = () => {
     const lower = final_recommendation.toLowerCase();
     if (lower.includes('action: buy') || lower.includes('**action**: buy')) {
@@ -66,7 +63,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
 
   return (
     <div className="space-y-6">
-      {/* Error Banner */}
       {hasErrors && (
         <div className={`glass-card overflow-hidden border ${hasRateLimitError ? 'border-amber-500/30 bg-amber-500/5' : 'border-rose-500/30 bg-rose-500/5'}`}>
           <div className="p-4">
@@ -99,9 +95,7 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
         </div>
       )}
 
-      {/* Hero Card - Recommendation */}
       <div className={`glass-card overflow-hidden ${colorClasses.border}`}>
-        {/* Header */}
         <div className={`p-6 border-b border-slate-700/50 bg-gradient-to-r ${colorClasses.gradient} to-transparent`}>
           <div className="flex items-center justify-between flex-wrap gap-4">
             <div className="flex items-center gap-4">
@@ -125,7 +119,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           </div>
         </div>
 
-        {/* Data Source Badge */}
         {data_source && (
           <div className="px-6 pt-4 -mb-2">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-800/50 text-xs text-slate-400">
@@ -135,7 +128,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           </div>
         )}
 
-        {/* Quick Stats */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-6">
           <MetricCard
             label={isRealtime ? "Live Price" : "Current Price"}
@@ -169,10 +161,8 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
         </div>
       </div>
 
-      {/* Stock Chart */}
       <StockChart ticker={ticker} />
 
-      {/* Recommendation Section */}
       <CollapsibleSection
         title="AI Recommendation"
         icon={CheckCircle}
@@ -185,7 +175,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
         </div>
       </CollapsibleSection>
 
-      {/* Market Data Section */}
       {market_data && (
         <CollapsibleSection
           title="Market Data Analysis"
@@ -195,7 +184,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           iconColor="text-blue-400"
         >
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Price Info */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white flex items-center gap-2">
                 <IndianRupee className="w-4 h-4 text-sky-400" />
@@ -211,7 +199,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Technical Indicators */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white flex items-center gap-2">
                 <Activity className="w-4 h-4 text-sky-400" />
@@ -234,7 +221,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Signals */}
             {market_data.technical_indicators?.signals && (
               <div className="md:col-span-2 space-y-3">
                 <h4 className="font-semibold text-white">Trade Alerts</h4>
@@ -249,7 +235,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
         </CollapsibleSection>
       )}
 
-      {/* Technical Analysis Section */}
       {technical && (
         <CollapsibleSection
           title="Technical Analysis"
@@ -259,7 +244,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           iconColor="text-purple-400"
         >
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Regime */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Market Regime</h4>
               <div className="bg-slate-800/30 rounded-xl p-4">
@@ -280,7 +264,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Support/Resistance */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Support & Resistance</h4>
               <div className="bg-slate-800/30 rounded-xl p-4">
@@ -301,7 +284,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Trend Structure */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Trend Analysis</h4>
               <div className="bg-slate-800/30 rounded-xl p-4">
@@ -312,7 +294,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Chart Patterns */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Chart Patterns</h4>
               <div className="bg-slate-800/30 rounded-xl p-4 space-y-2">
@@ -334,7 +315,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
         </CollapsibleSection>
       )}
 
-      {/* Risk Analysis Section */}
       {risk && (
         <CollapsibleSection
           title="Risk Analysis"
@@ -344,7 +324,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
           iconColor="text-rose-400"
         >
           <div className="grid md:grid-cols-2 gap-6">
-            {/* Position Sizing */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Position Sizing</h4>
               <div className="bg-slate-800/30 rounded-xl p-4">
@@ -355,7 +334,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Risk Limits */}
             <div className="space-y-3">
               <h4 className="font-semibold text-white">Trade Setup</h4>
               <div className="bg-slate-800/30 rounded-xl p-4">
@@ -366,7 +344,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
               </div>
             </div>
 
-            {/* Guardrails */}
             {risk.risk_limits?.guardrails && (
               <div className="md:col-span-2 space-y-3">
                 <h4 className="font-semibold text-white flex items-center gap-2">
@@ -392,7 +369,6 @@ export function AnalysisResults({ data }: AnalysisResultsProps) {
   );
 }
 
-// Collapsible Section Component
 interface CollapsibleSectionProps {
   title: string;
   icon: React.ElementType;
@@ -428,7 +404,6 @@ function CollapsibleSection({ title, icon: Icon, isExpanded, onToggle, iconColor
   );
 }
 
-// Signal Badge Component
 function SignalBadge({ signal }: { signal: string }) {
   const isBullish = signal.toLowerCase().includes('bullish') || signal.toLowerCase().includes('above');
   const isBearish = signal.toLowerCase().includes('bearish') || signal.toLowerCase().includes('below');
@@ -444,7 +419,6 @@ function SignalBadge({ signal }: { signal: string }) {
   );
 }
 
-// Simple markdown formatter
 function formatMarkdown(text: string): React.ReactNode {
   return text.split('\n').map((line, i) => {
     if (line.startsWith('### ')) {

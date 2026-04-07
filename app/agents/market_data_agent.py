@@ -1,13 +1,3 @@
-"""
-Market Data & Feature Engineering Agent
-
-This agent is responsible for:
-- Fetching real-time and historical market data
-- Computing technical indicators and features
-- Data preprocessing and normalization
-- Feature engineering for analysis
-"""
-
 import yfinance as yf
 import pandas as pd
 import numpy as np
@@ -28,32 +18,21 @@ logger = logging.getLogger(__name__)
 
 
 class MarketDataAgent(BaseAgent):
-    """
-    Market Data & Feature Engineering Agent
-    
-    Specializes in:
-    - Real-time market data retrieval
-    - Historical data analysis
-    - Technical indicator computation
-    - Feature engineering for ML models
-    """
-    
     def __init__(self):
         super().__init__(
             name="MarketDataAgent",
             description="Fetches market data and engineers features for stock analysis",
-            temperature=0.0  # Low temperature for precise data handling
+            temperature=0.0
         )
-        
+
     def _setup_tools(self) -> List[Any]:
-        """Set up market data tools"""
         return [
             self.fetch_stock_data,
             self.compute_technical_indicators,
             self.get_fundamental_data,
             self.calculate_returns
         ]
-    
+
     def _create_system_prompt(self) -> str:
         return """You are the Market Data & Feature Engineering Agent, a specialized AI for financial data processing focused on the INDIAN STOCK MARKET.
 
@@ -71,44 +50,18 @@ When analyzing data:
 - Explain the significance of computed features
 - Provide context for unusual market conditions
 
-Output Format:
-- Present data summaries in a clear, structured format
-- Include key statistics (mean, std, min, max) for numerical features
-- Highlight any data quality issues or concerns
-- Recommend additional data points if needed for comprehensive analysis
-
 You work as part of a team with Technical Analysis and Risk Management agents.
 Provide your analysis in a way that supports their specialized functions."""
-    
+
     @staticmethod
-    def fetch_stock_data(
-        ticker: str,
-        period: str = "1y",
-        interval: str = "1d"
-    ) -> Dict[str, Any]:
-        """
-        Fetch historical stock data from Yahoo Finance
-        
-        Args:
-            ticker: Stock ticker symbol (e.g., 'AAPL', 'GOOGL')
-            period: Data period (1d, 5d, 1mo, 3mo, 6mo, 1y, 2y, 5y, 10y, ytd, max)
-            interval: Data interval (1m, 2m, 5m, 15m, 30m, 60m, 90m, 1h, 1d, 5d, 1wk, 1mo, 3mo)
-            
-        Returns:
-            Dictionary containing OHLCV data and metadata
-        """
+    def fetch_stock_data(ticker: str, period: str = "1y", interval: str = "1d") -> Dict[str, Any]:
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period=period, interval=interval)
-            
+
             if df.empty:
-                return {
-                    "success": False,
-                    "error": f"No data found for ticker {ticker}",
-                    "ticker": ticker
-                }
-            
-            # Convert to serializable format
+                return {"success": False, "error": f"No data found for ticker {ticker}", "ticker": ticker}
+
             data = {
                 "success": True,
                 "ticker": ticker,
@@ -137,126 +90,92 @@ Provide your analysis in a way that supports their specialized functions."""
                 },
                 "price_data": df[['Open', 'High', 'Low', 'Close', 'Volume']].round(2).to_dict()
             }
-            
             return data
-            
+
         except Exception as e:
             logger.error(f"Error fetching data for {ticker}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "ticker": ticker
-            }
-    
+            return {"success": False, "error": str(e), "ticker": ticker}
+
     @staticmethod
     def compute_technical_indicators(ticker: str, period: str = "1y") -> Dict[str, Any]:
-        """
-        Compute comprehensive technical indicators for a stock
-        
-        Args:
-            ticker: Stock ticker symbol
-            period: Historical data period
-            
-        Returns:
-            Dictionary containing technical indicators
-        """
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period=period)
-            
+
             if df.empty or len(df) < 50:
-                return {
-                    "success": False,
-                    "error": "Insufficient data for indicator calculation",
-                    "ticker": ticker
-                }
-            
-            # Moving Averages
+                return {"success": False, "error": "Insufficient data for indicator calculation", "ticker": ticker}
+
             df['SMA_20'] = SMAIndicator(close=df['Close'], window=20).sma_indicator()
             df['SMA_50'] = SMAIndicator(close=df['Close'], window=50).sma_indicator()
             df['SMA_200'] = SMAIndicator(close=df['Close'], window=200).sma_indicator()
             df['EMA_12'] = EMAIndicator(close=df['Close'], window=12).ema_indicator()
             df['EMA_26'] = EMAIndicator(close=df['Close'], window=26).ema_indicator()
-            
-            # MACD
+
             macd = MACD(close=df['Close'])
             df['MACD'] = macd.macd()
             df['MACD_Signal'] = macd.macd_signal()
             df['MACD_Histogram'] = macd.macd_diff()
-            
-            # RSI
+
             df['RSI'] = RSIIndicator(close=df['Close'], window=14).rsi()
-            
-            # Bollinger Bands
+
             bb = BollingerBands(close=df['Close'], window=20, window_dev=2)
             df['BB_Upper'] = bb.bollinger_hband()
             df['BB_Middle'] = bb.bollinger_mavg()
             df['BB_Lower'] = bb.bollinger_lband()
             df['BB_Width'] = bb.bollinger_wband()
-            
-            # ATR (Average True Range)
+
             df['ATR'] = AverageTrueRange(
                 high=df['High'], low=df['Low'], close=df['Close'], window=14
             ).average_true_range()
-            
-            # ADX (Average Directional Index)
+
             adx = ADXIndicator(high=df['High'], low=df['Low'], close=df['Close'], window=14)
             df['ADX'] = adx.adx()
             df['DI_Plus'] = adx.adx_pos()
             df['DI_Minus'] = adx.adx_neg()
-            
-            # Stochastic Oscillator
+
             stoch = StochasticOscillator(high=df['High'], low=df['Low'], close=df['Close'])
             df['Stoch_K'] = stoch.stoch()
             df['Stoch_D'] = stoch.stoch_signal()
-            
-            # Volume Indicators
+
             df['OBV'] = OnBalanceVolumeIndicator(close=df['Close'], volume=df['Volume']).on_balance_volume()
-            
-            # Get latest values
+
             latest = df.iloc[-1]
             prev = df.iloc[-2]
-            
-            # Compute signals
+
             signals = []
-            
-            # Moving average signals
+
             if latest['Close'] > latest['SMA_50']:
                 signals.append("Price above SMA50 (Bullish)")
             else:
                 signals.append("Price below SMA50 (Bearish)")
-                
+
             if latest['SMA_50'] > latest['SMA_200']:
                 signals.append("Golden Cross active (Bullish)")
             elif latest['SMA_50'] < latest['SMA_200']:
                 signals.append("Death Cross active (Bearish)")
-            
-            # RSI signals
+
             if latest['RSI'] > 70:
                 signals.append(f"RSI Overbought ({latest['RSI']:.1f})")
             elif latest['RSI'] < 30:
                 signals.append(f"RSI Oversold ({latest['RSI']:.1f})")
             else:
                 signals.append(f"RSI Neutral ({latest['RSI']:.1f})")
-            
-            # MACD signals
+
             if latest['MACD'] > latest['MACD_Signal'] and prev['MACD'] <= prev['MACD_Signal']:
                 signals.append("MACD Bullish Crossover")
             elif latest['MACD'] < latest['MACD_Signal'] and prev['MACD'] >= prev['MACD_Signal']:
                 signals.append("MACD Bearish Crossover")
-            
-            # Bollinger Band signals
+
             if latest['Close'] > latest['BB_Upper']:
                 signals.append("Price above upper Bollinger Band (Overbought)")
             elif latest['Close'] < latest['BB_Lower']:
                 signals.append("Price below lower Bollinger Band (Oversold)")
-            
-            # ADX trend strength
+
             if latest['ADX'] > 25:
                 signals.append(f"Strong trend (ADX: {latest['ADX']:.1f})")
             else:
                 signals.append(f"Weak/No trend (ADX: {latest['ADX']:.1f})")
-            
+
             return {
                 "success": True,
                 "ticker": ticker,
@@ -298,30 +217,17 @@ Provide your analysis in a way that supports their specialized functions."""
                 "signals": signals,
                 "current_price": round(latest['Close'], 2)
             }
-            
+
         except Exception as e:
             logger.error(f"Error computing indicators for {ticker}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "ticker": ticker
-            }
-    
+            return {"success": False, "error": str(e), "ticker": ticker}
+
     @staticmethod
     def get_fundamental_data(ticker: str) -> Dict[str, Any]:
-        """
-        Get fundamental data for a stock
-        
-        Args:
-            ticker: Stock ticker symbol
-            
-        Returns:
-            Dictionary containing fundamental metrics
-        """
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
-            
+
             return {
                 "success": True,
                 "ticker": ticker,
@@ -374,87 +280,46 @@ Provide your analysis in a way that supports their specialized functions."""
                     "recommendation": info.get("recommendationKey", "N/A")
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"Error fetching fundamental data for {ticker}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "ticker": ticker
-            }
-    
+            return {"success": False, "error": str(e), "ticker": ticker}
+
     @staticmethod
     def calculate_returns(ticker: str, period: str = "1y") -> Dict[str, Any]:
-        """
-        Calculate various return metrics for a stock
-        
-        Args:
-            ticker: Stock ticker symbol
-            period: Historical data period
-            
-        Returns:
-            Dictionary containing return metrics
-        """
         try:
             stock = yf.Ticker(ticker)
             df = stock.history(period=period)
-            
+
             if df.empty:
-                return {
-                    "success": False,
-                    "error": f"No data found for ticker {ticker}",
-                    "ticker": ticker
-                }
-            
-            # Calculate returns
+                return {"success": False, "error": f"No data found for ticker {ticker}", "ticker": ticker}
+
             df['Daily_Return'] = df['Close'].pct_change()
             df['Log_Return'] = np.log(df['Close'] / df['Close'].shift(1))
-            
-            # Cumulative returns
+
             total_return = (df['Close'].iloc[-1] / df['Close'].iloc[0] - 1) * 100
-            
-            # Annualized metrics (assuming 252 trading days)
             trading_days = len(df)
-            annualization_factor = 252 / trading_days if trading_days > 0 else 1
-            
             mean_daily_return = df['Daily_Return'].mean()
             std_daily_return = df['Daily_Return'].std()
-            
             annualized_return = mean_daily_return * 252 * 100
             annualized_volatility = std_daily_return * np.sqrt(252) * 100
-            
-            # Sharpe Ratio (assuming 0% risk-free rate for simplicity)
+
             sharpe_ratio = (annualized_return / annualized_volatility) if annualized_volatility != 0 else 0
-            
-            # Maximum Drawdown
+
             rolling_max = df['Close'].expanding().max()
             drawdown = (df['Close'] - rolling_max) / rolling_max
             max_drawdown = drawdown.min() * 100
-            
-            # Sortino Ratio (downside deviation)
+
             negative_returns = df['Daily_Return'][df['Daily_Return'] < 0]
             downside_std = negative_returns.std() * np.sqrt(252) * 100
             sortino_ratio = (annualized_return / downside_std) if downside_std != 0 else 0
-            
-            # Calmar Ratio
+
             calmar_ratio = (annualized_return / abs(max_drawdown)) if max_drawdown != 0 else 0
-            
-            # Period returns
-            if len(df) >= 5:
-                week_return = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100
-            else:
-                week_return = None
-                
-            if len(df) >= 21:
-                month_return = (df['Close'].iloc[-1] / df['Close'].iloc[-21] - 1) * 100
-            else:
-                month_return = None
-                
-            if len(df) >= 63:
-                quarter_return = (df['Close'].iloc[-1] / df['Close'].iloc[-63] - 1) * 100
-            else:
-                quarter_return = None
-            
+
+            week_return = (df['Close'].iloc[-1] / df['Close'].iloc[-5] - 1) * 100 if len(df) >= 5 else None
+            month_return = (df['Close'].iloc[-1] / df['Close'].iloc[-21] - 1) * 100 if len(df) >= 21 else None
+            quarter_return = (df['Close'].iloc[-1] / df['Close'].iloc[-63] - 1) * 100 if len(df) >= 63 else None
+
             return {
                 "success": True,
                 "ticker": ticker,
@@ -482,48 +347,35 @@ Provide your analysis in a way that supports their specialized functions."""
                     "win_rate_pct": round((df['Daily_Return'] > 0).sum() / trading_days * 100, 2)
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"Error calculating returns for {ticker}: {e}")
-            return {
-                "success": False,
-                "error": str(e),
-                "ticker": ticker
-            }
-    
+            return {"success": False, "error": str(e), "ticker": ticker}
+
     async def execute(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Execute the Market Data Agent's analysis
-        
-        Args:
-            state: Current workflow state
-            
-        Returns:
-            Updated state with market data analysis
-        """
         ticker = state.get("ticker", "")
-        
+
         if not ticker:
-            return {
-                **state,
-                "errors": state.get("errors", []) + ["No ticker provided to Market Data Agent"]
-            }
-        
+            return {**state, "errors": state.get("errors", []) + ["No ticker provided to Market Data Agent"]}
+
         try:
-            # Fetch all market data
             stock_data = self.fetch_stock_data(ticker)
             technical_indicators = self.compute_technical_indicators(ticker)
             fundamental_data = self.get_fundamental_data(ticker)
             returns_data = self.calculate_returns(ticker)
-            
-            # Prepare summary for LLM analysis
+
+            avg_volume = stock_data.get('statistics', {}).get('avg_volume', 'N/A')
+            avg_volume_str = f"{avg_volume:,}" if isinstance(avg_volume, (int, float)) else str(avg_volume)
+            market_cap = fundamental_data.get('valuation', {}).get('market_cap', 'N/A')
+            market_cap_str = f"₹{market_cap:,}" if isinstance(market_cap, (int, float)) else str(market_cap)
+
             data_summary = f"""
 Market Data Analysis for {ticker}:
 
 PRICE DATA:
 - Current Price: ₹{stock_data.get('latest', {}).get('close', 'N/A')}
 - 52-Week Range: ₹{stock_data.get('statistics', {}).get('min_close', 'N/A')} - ₹{stock_data.get('statistics', {}).get('max_close', 'N/A')}
-- Average Volume: {stock_data.get('statistics', {}).get('avg_volume', 'N/A'):,}
+- Average Volume: {avg_volume_str}
 
 TECHNICAL SIGNALS:
 {chr(10).join(['- ' + s for s in technical_indicators.get('signals', [])])}
@@ -540,11 +392,10 @@ RETURNS:
 
 FUNDAMENTALS:
 - P/E Ratio: {fundamental_data.get('valuation', {}).get('pe_ratio', 'N/A')}
-- Market Cap: ₹{fundamental_data.get('valuation', {}).get('market_cap', 'N/A'):,}
+- Market Cap: {market_cap_str}
 - Sector: {fundamental_data.get('company_info', {}).get('sector', 'N/A')}
 """
-            
-            # Get LLM analysis
+
             messages = self._format_messages(state)
             messages.append(HumanMessage(content=f"""
 Analyze the following market data and provide insights:
@@ -557,33 +408,37 @@ Provide a comprehensive summary of:
 3. Notable patterns or anomalies
 4. Recommendations for further analysis by Technical and Risk agents
 """))
-            
-            llm_analysis = await self._invoke_llm(messages)
-            
-            # Update state with results
+
             analysis_results = state.get("analysis_results", {})
             analysis_results["market_data"] = {
                 "stock_data": stock_data,
                 "technical_indicators": technical_indicators,
                 "fundamental_data": fundamental_data,
                 "returns_data": returns_data,
-                "llm_analysis": llm_analysis
-            }
-            
-            return {
-                **state,
-                "analysis_results": analysis_results,
-                "messages": state.get("messages", []) + [{
-                    "role": "assistant",
-                    "agent": self.name,
-                    "content": llm_analysis
-                }]
-            }
-            
-        except Exception as e:
-            logger.error(f"Market Data Agent execution error: {e}")
-            return {
-                **state,
-                "errors": state.get("errors", []) + [f"Market Data Agent error: {str(e)}"]
             }
 
+            llm_analysis = ""
+            try:
+                llm_analysis = await self._invoke_llm(messages)
+                analysis_results["market_data"]["llm_analysis"] = llm_analysis
+            except Exception as llm_err:
+                logger.error(f"Market Data Agent LLM error: {llm_err}")
+                analysis_results["market_data"]["llm_analysis"] = ""
+                analysis_results["market_data"]["llm_error"] = str(llm_err)
+                state = {
+                    **state,
+                    "errors": state.get("errors", [])
+                    + [f"Market Data Agent LLM error: {str(llm_err)}"],
+                }
+
+            out_messages = state.get("messages", [])
+            if llm_analysis:
+                out_messages = out_messages + [
+                    {"role": "assistant", "agent": self.name, "content": llm_analysis}
+                ]
+
+            return {**state, "analysis_results": analysis_results, "messages": out_messages}
+
+        except Exception as e:
+            logger.error(f"Market Data Agent execution error: {e}")
+            return {**state, "errors": state.get("errors", []) + [f"Market Data Agent error: {str(e)}"]}

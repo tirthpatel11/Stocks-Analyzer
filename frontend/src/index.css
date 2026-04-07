@@ -35,7 +35,6 @@
   }
 }
 
-/* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
@@ -53,7 +52,6 @@
   @apply bg-slate-500;
 }
 
-/* Loading animation */
 .loading-dots::after {
   content: '';
   animation: dots 1.5s steps(4, end) infinite;

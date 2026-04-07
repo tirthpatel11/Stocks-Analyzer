@@ -112,14 +112,14 @@ cp config.example.env .env
 # GROK_API_KEY=your_grok_api_key_here
 ```
 
-5. **Run the server**:
+5. **Run the server** (default **port 8001** so it does not clash with other apps that often use 8000):
 ```bash
-uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8001
 ```
 
 6. **Access the API**:
-- API Documentation: http://localhost:8000/docs
-- Alternative Docs: http://localhost:8000/redoc
+- API Documentation: http://localhost:8001/docs
+- Alternative Docs: http://localhost:8001/redoc
 
 ## 📡 API Endpoints
 
@@ -180,7 +180,7 @@ import requests
 
 # Full analysis
 response = requests.post(
-    "http://localhost:8000/analyze",
+    "http://localhost:8001/analyze",
     json={
         "ticker": "NVDA",
         "task": "Analyze risk/reward for a swing trade",
@@ -195,15 +195,15 @@ print(result["final_recommendation"])
 ### cURL
 ```bash
 # Quick technical analysis
-curl -X POST "http://localhost:8000/quick/technical" \
+curl -X POST "http://localhost:8001/quick/technical" \
   -H "Content-Type: application/json" \
   -d '{"ticker": "TSLA"}'
 
 # Get support/resistance levels
-curl "http://localhost:8000/support-resistance/AAPL"
+curl "http://localhost:8001/support-resistance/AAPL"
 
 # Portfolio risk analysis
-curl -X POST "http://localhost:8000/portfolio/risk" \
+curl -X POST "http://localhost:8001/portfolio/risk" \
   -H "Content-Type: application/json" \
   -d '{"tickers": ["AAPL", "GOOGL", "MSFT"], "weights": [0.4, 0.3, 0.3]}'
 ```
@@ -214,9 +214,12 @@ Environment variables (in `.env`):
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GROK_API_KEY` | - | Your Grok API key (required) |
-| `GROK_API_BASE` | `https://api.x.ai/v1` | Grok API base URL |
-| `GROK_MODEL` | `grok-beta` | Model to use |
+| `GROQ_API_KEY` | - | **Groq** API key (use with `GROQ_*`; takes priority if set) |
+| `GROQ_API_BASE` | `https://api.groq.com/openai/v1` | Groq OpenAI-compatible base URL |
+| `GROQ_MODEL` | `llama-3.3-70b-versatile` | Groq model id |
+| `GROK_API_KEY` | - | **xAI Grok** API key (if you use Grok, not Groq) |
+| `GROK_API_BASE` | `https://api.x.ai/v1` | xAI API base URL |
+| `GROK_MODEL` | `grok-3-mini` | xAI model id. If the name looks like Groq (e.g. `llama-…`), the app uses **Groq’s** base URL with this key. |
 | `DEBUG` | `false` | Enable debug mode |
 | `LOG_LEVEL` | `INFO` | Logging level |
 
